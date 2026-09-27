@@ -1,90 +1,74 @@
 # First Live Source Smoke — 2026-09-27
 
-## Run identity
+## Live validation runs
+
+### Run 1 — initial source qualification
 
 - GitHub Actions run: `36299964884`
-- Run timestamp: 2026-09-27 06:23 UTC (13:23 ICT)
-- Pilot area: Ram Inthra / Prasert-Manukitch / Pradit Manutham / Nuan Chan
-- Artifact: `current-source-smoke` (3-day retention)
+- Time: 2026-09-27 06:23 UTC (13:23 ICT)
+- Pipeline result: `PARTIAL`
 
-## Result
+The iTIC / Longdo event JSON returned HTTP 200 with 745 records,
+all with coordinates. The broad pilot bbox contained 41 records. The
+latest event start was 13:21 ICT, about 0.05 h before retrieval.
 
-**Pipeline status: PARTIAL**
+The Free-Longdo traffic-status request returned HTTP 401.
 
-### Latest iTIC / Longdo event JSON — PASS
+### Run 3 — hardened matcher / redirect diagnostics
 
-A live request to `https://event.longdo.com/feed/json` succeeded.
+- GitHub Actions run: `36300151445`
+- Commit: `e946b64bd5d5e37d2b2fd0628220c5c292c05989`
+- Workflow conclusion: `success`
+- Time: 2026-09-27 06:27 UTC (13:27 ICT)
 
-Observed in the smoke run:
+Events:
 
-- HTTP `200`
-- retrieved at `2026-09-27T06:23:55Z`
-- HTTP `Last-Modified`: `2026-09-27T06:22:01Z`
-- payload size: `1,555,073` bytes
-- total records: `745`
-- unique event IDs: `745`
-- invalid/missing coordinates: `0`
-- records inside the broad Phase 0 extraction bbox: `41`
-- latest event start: `2026-09-27 13:21 ICT`
-- latest-event age at retrieval: approximately `0.05 h`
+- HTTP 200
+- payload 1,555,073 bytes
+- broad study-area records: 41
+- latest event start: 2026-09-27 13:21 ICT
+- latest-event age at retrieval: 0.11 h
+- format: JSON
 
-This is strong evidence that the incident source was current during the run.
+The stricter text-evidence rule yielded:
 
-The 41 bbox records were dominated by flood reports (38) plus three car-breakdown reports. They are **context candidates**, not 41 events on the four core roads.
+- TITLE_STRONG: 1
+- DESCRIPTION_CONTEXT: 9
+- UNMATCHED: 31
 
-A clearly relevant title-level match in the snapshot was:
+The one title-strong core-road record was:
 
-- `2026-09-26 22:30` — `น้ำท่วม รามอินทรา 5 แยก 42`
+- 2026-09-26 22:30 — น้ำท่วม รามอินทรา 5 แยก 42
 
-### QA finding — description false positives
+The description-only cases were largely false road-name signals caused by
+responding-agency text such as หมวดทางหลวงรามอินทรา. They are now
+context-only and cannot become road attribution without geometry.
 
-The initial matcher searched the whole event object. Some highway-event descriptions contain the responding-agency phrase `เจ้าหน้าที่หมวดทางหลวงรามอินทรา`, which falsely looks like a Ram Inthra Road match even when the event is on another highway.
+Free-Longdo traffic status:
 
-The matcher is therefore split into:
+- requested URL: https://traffic.longdo.com/api/feed/free
+- final URL: https://live.iticfoundation.org/feed/free
+- HTTP 401 Unauthorized
+- usable payload: none
 
-- `TITLE_STRONG` — road alias in `title/title_en`;
-- `DESCRIPTION_CONTEXT` — alias only in `description/description_en`;
-- `UNMATCHED` — no text evidence.
+This establishes that current speed is an access dependency, not a parser
+failure.
 
-Description-only evidence is never final road attribution. Geometry is still required.
-
-A re-check of the first 41-record snapshot with this stricter logic yielded:
-
-- `TITLE_STRONG`: 1
-- `DESCRIPTION_CONTEXT`: 9
-- `UNMATCHED`: 31
-
-### Free-Longdo traffic status — BLOCKED
-
-The request to `https://traffic.longdo.com/api/feed/free` returned:
-
-- HTTP `401 Unauthorized`
-- no usable traffic payload
-
-Therefore current speed/status is **not yet solved** by the anonymous Free-Longdo endpoint.
-
-## Phase 0 decision
+## Current Phase 0 decision
 
 Passed:
 
-- live-event connectivity;
-- JSON parsing;
-- source/retrieval freshness metadata;
+- live event connectivity and currentness;
+- event parsing and freshness metadata;
 - broad study-area extraction;
-- internet-enabled GitHub Actions smoke environment;
-- ephemeral artifact capture without committing raw live data.
+- title-vs-description QA;
+- live GitHub Actions environment;
+- ephemeral raw-data artifact capture.
 
-Still open:
+Next gate:
 
-- exact road/segment incident attribution;
-- current road speed/status source;
-- road geometry / segment inventory;
-- current-vs-baseline comparison;
-- cross-road impact analysis.
-
-## Next action
-
-1. Add exact road geometry / segment matching for the four-road pilot.
-2. Keep iTIC Events JSON as the live incident source.
-3. Qualify another current-speed source or an authenticated iTIC/Longdo route.
-4. Do not build the dashboard until current speed/status is available or the POC is explicitly re-scoped as incident-first.
+1. fetch exact OSM geometry for the four core roads;
+2. match events by distance to road geometry;
+3. keep broad-bbox events as context only;
+4. use a qualified keyed/alternative current-speed source;
+5. build current-vs-baseline analytics only after current speed is qualified.

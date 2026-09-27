@@ -5,8 +5,9 @@ on:
   push:
     paths:
       - "scripts/live/**"
+      - "scripts/spatial/**"
       - "config/study_area.json"
-      - "tests/test_current_pipeline.py"
+      - "tests/**"
       - ".github/workflows/current-source-smoke.yml"
 
 permissions:
@@ -15,7 +16,7 @@ permissions:
 jobs:
   current-source-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 7
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,6 +31,29 @@ jobs:
 
       - name: Fetch current source bundle
         run: python scripts/live/fetch_current_bundle.py
+
+      - name: Fetch OSM core-road geometry
+        run: python scripts/spatial/fetch_osm_network.py
+
+      - name: Match current events to core-road geometry
+        shell: bash
+        run: |
+          manifest=$(python -c 'import json; print(json.load(open("data/raw/current/latest.json"))["manifest"])')
+          run_dir=$(dirname "$manifest")
+          python scripts/spatial/match_events_to_network.py \
+            --events "$run_dir/events.study_area.json" \
+            --network data/processed/osm/core_roads.geojson \
+            --output "$run_dir/events.network_matched.json"
+
+      - name: Optional Longdo current speed sample
+        if: ${{ secrets.LONGDO_MAP_API_KEY != '' }}
+        env:
+          LONGDO_MAP_API_KEY: ${{ secrets.LONGDO_MAP_API_KEY }}
+        run: |
+          python scripts/live/fetch_longdo_traffic_speed.py \
+            --network data/processed/osm/core_roads.geojson \
+            --output data/processed/current_speed/longdo_speed.json \
+            --max-points 8
 
       - name: Print latest summary
         if: always()
@@ -47,6 +71,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: current-source-smoke
-          path: data/raw/current/
+          path: |
+            data/raw/current/
+            data/processed/osm/
+            data/processed/current_speed/
           if-no-files-found: warn
           retention-days: 3
