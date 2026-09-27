@@ -23,17 +23,32 @@ def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().casefold())
 
 
+def is_route_segment_event(event: dict[str, Any]) -> bool:
+    title = normalize_text(event.get("title"))
+    refs = event.get("event_route_refs") or []
+    return bool(refs) and "ช่วง" in title
+
+
 def cluster_key(event: dict[str, Any], coord_decimals: int) -> str:
-    lat = round(float(event["latitude"]), coord_decimals)
-    lon = round(float(event["longitude"]), coord_decimals)
-    parts = [
+    base = [
         str(event.get("confirmed_road_id") or ""),
         str(event.get("type") or ""),
         normalize_text(event.get("title")),
-        f"{lat:.{coord_decimals}f}",
-        f"{lon:.{coord_decimals}f}",
     ]
-    return "|".join(parts)
+    if is_route_segment_event(event):
+        # Route feeds can publish several point records for the same named
+        # highway segment/status. Treat the segment title as the incident unit.
+        return "|".join(base + ["route-segment"])
+
+    lat = round(float(event["latitude"]), coord_decimals)
+    lon = round(float(event["longitude"]), coord_decimals)
+    return "|".join(
+        base
+        + [
+            f"{lat:.{coord_decimals}f}",
+            f"{lon:.{coord_decimals}f}",
+        ]
+    )
 
 
 def build_clusters(
@@ -89,6 +104,20 @@ def build_clusters(
                         for ref in (r.get("event_route_refs") or [])
                     }
                 ),
+                "cluster_scope": (
+                    "ROUTE_SEGMENT"
+                    if any(is_route_segment_event(r) for r in rows)
+                    else "POINT_OR_LOCAL"
+                ),
+                "location_count": len(
+                    {
+                        (
+                            round(float(r["latitude"]), coord_decimals),
+                            round(float(r["longitude"]), coord_decimals),
+                        )
+                        for r in rows
+                    }
+                ),
             }
         )
 
@@ -106,7 +135,8 @@ def build_clusters(
             "confirmed_cluster_count": len(clusters),
             "clusters_by_road": road_counts,
             "clustering_rule": (
-                "confirmed road + type + normalized title + rounded coordinate"
+                "route segment: confirmed road + type + normalized segment title; "
+                "point/local: confirmed road + type + title + rounded coordinate"
             ),
             "coordinate_decimals": coord_decimals,
         },

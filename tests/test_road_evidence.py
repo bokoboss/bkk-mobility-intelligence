@@ -76,6 +76,71 @@ class RoadEvidenceTests(unittest.TestCase):
         self.assertFalse(out["network_confirmed"])
         self.assertEqual(out["network_match_class"], "GEOMETRY_ONLY_CANDIDATE")
 
+
+    def test_route_segment_clusters_across_multiple_coordinates(self):
+        rows = [
+            {
+                "network_confirmed": True,
+                "confirmed_road_id": "ram_inthra",
+                "type": "6",
+                "title": "น้ำท่วมทางหลวง 304 ช่วงคันนายาว - แยกเข้ามีนบุรี (ผ่านได้)",
+                "latitude": "13.812891",
+                "longitude": "100.707488",
+                "start": "2026-09-26 03:30:07",
+                "stop": "2026-09-27 20:00:00",
+                "eid": "10",
+                "network_match_class": "GEOMETRY+ROUTE_CONFIRMED",
+                "event_route_refs": ["304"],
+            },
+            {
+                "network_confirmed": True,
+                "confirmed_road_id": "ram_inthra",
+                "type": "6",
+                "title": "น้ำท่วมทางหลวง 304 ช่วงคันนายาว - แยกเข้ามีนบุรี (ผ่านได้)",
+                "latitude": "13.822866",
+                "longitude": "100.678824",
+                "start": "2026-09-25 00:00:56",
+                "stop": "2026-09-28 13:11:48",
+                "eid": "11",
+                "network_match_class": "GEOMETRY+ROUTE_CONFIRMED",
+                "event_route_refs": ["304"],
+            },
+        ]
+        result = cluster.build_clusters(rows, 5)
+        self.assertEqual(result["summary"]["confirmed_cluster_count"], 1)
+        self.assertEqual(result["clusters"][0]["cluster_scope"], "ROUTE_SEGMENT")
+        self.assertEqual(result["clusters"][0]["location_count"], 2)
+
+    def test_local_same_title_different_coordinates_stay_distinct(self):
+        rows = [
+            {
+                "network_confirmed": True,
+                "confirmed_road_id": "osm_x",
+                "type": "6",
+                "title": "น้ำท่วม ถนนนวมินทร์",
+                "latitude": "13.80",
+                "longitude": "100.64",
+                "start": "2026-09-27 00:00:00",
+                "eid": "20",
+                "network_match_class": "GEOMETRY+TITLE_CONFIRMED",
+                "event_route_refs": [],
+            },
+            {
+                "network_confirmed": True,
+                "confirmed_road_id": "osm_x",
+                "type": "6",
+                "title": "น้ำท่วม ถนนนวมินทร์",
+                "latitude": "13.81",
+                "longitude": "100.65",
+                "start": "2026-09-27 00:00:00",
+                "eid": "21",
+                "network_match_class": "GEOMETRY+TITLE_CONFIRMED",
+                "event_route_refs": [],
+            },
+        ]
+        result = cluster.build_clusters(rows, 5)
+        self.assertEqual(result["summary"]["confirmed_cluster_count"], 2)
+
     def test_cluster_collapses_duplicate_records(self):
         rows = [
             {
