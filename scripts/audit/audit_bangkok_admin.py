@@ -1,134 +1,114 @@
 #!/usr/bin/env python3
-"""Audit official BMA 50-district dataset resources.
-
-This avoids relying on a single large Overpass administrative query. It reads
-CKAN package metadata and probes only lightweight JSON/KML/GML-style resources.
-"""
+"""Audit the official BMA 50-district KML resource directly."""
 
 from __future__ import annotations
 
+import io
 import json
-import urllib.parse
+import math
+import re
 import urllib.request
+import xml.etree.ElementTree as ET
 
-USER_AGENT = "bkk-mobility-intelligence-bangkok-audit/0.2"
-CKAN_ROOTS = [
-    "https://data.bangkok.go.th",
-    "https://data.go.th",
-]
-PACKAGE_IDS = [
-    "bae2ce5a-5990-413b-ba86-9fcf28bdebcc",
-    "e537025b-1cf6-4c5b-8e46-c2e976f13283",
-    "district",
-]
+URL = "https://data.bangkok.go.th/dataset/e537025b-1cf6-4c5b-8e46-c2e976f13283/resource/0f40f9b4-617b-46a9-8806-f590da610954/download/district.kml"
+USER_AGENT = "bkk-mobility-intelligence-bangkok-audit/0.3"
+NS = {"kml": "http://www.opengis.net/kml/2.2"}
 
 
-def fetch_json(url: str, timeout: float = 30.0) -> dict:
+def fetch() -> bytes:
     req = urllib.request.Request(
-        url,
+        URL,
         headers={
             "User-Agent": USER_AGENT,
-            "Accept": "application/json,*/*;q=0.8",
+            "Accept": "application/vnd.google-earth.kml+xml,application/xml,text/xml,*/*",
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8-sig", errors="replace"))
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        return resp.read()
 
 
-def fetch_prefix(url: str, limit: int = 2000, timeout: float = 25.0) -> dict:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Range": f"bytes=0-{limit-1}",
-            "Accept": "*/*",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read(limit)
-        return {
-            "status": getattr(resp, "status", None),
-            "final_url": resp.geturl(),
-            "content_type": resp.headers.get("Content-Type"),
-            "content_length": resp.headers.get("Content-Length"),
-            "sample_prefix": raw.decode("utf-8", errors="replace")[:limit],
-        }
+def parse_coord_text(text: str | None) -> list[list[float]]:
+    out = []
+    for token in re.split(r"\s+", (text or "").strip()):
+        if not token:
+            continue
+        parts = token.split(",")
+        if len(parts) < 2:
+            continue
+        try:
+            lon = float(parts[0])
+            lat = float(parts[1])
+        except ValueError:
+            continue
+        if math.isfinite(lon) and math.isfinite(lat):
+            out.append([lon, lat])
+    return out
 
 
-def compact_resource(resource: dict) -> dict:
-    keys = (
-        "id", "name", "format", "mimetype", "url", "url_type",
-        "resource_type", "last_modified", "created",
-    )
-    return {k: resource.get(k) for k in keys if k in resource}
-
-
-def discover_package() -> tuple[dict, str, str]:
-    errors = []
-    for root in CKAN_ROOTS:
-        for package_id in PACKAGE_IDS:
-            url = (
-                root.rstrip("/")
-                + "/api/3/action/package_show?"
-                + urllib.parse.urlencode({"id": package_id})
-            )
-            try:
-                payload = fetch_json(url)
-                if payload.get("success") and isinstance(payload.get("result"), dict):
-                    return payload["result"], root, package_id
-            except Exception as exc:
-                errors.append(
-                    f"{url}: {type(exc).__name__}: {exc}"
-                )
-    raise RuntimeError("; ".join(errors))
+def field_map(pm: ET.Element) -> dict[str, str]:
+    fields = {}
+    for data in pm.findall(".//kml:ExtendedData/kml:Data", NS):
+        name = data.get("name")
+        value = data.findtext("kml:value", default="", namespaces=NS)
+        if name:
+            fields[name] = value
+    for sd in pm.findall(".//kml:ExtendedData/kml:SchemaData/kml:SimpleData", NS):
+        name = sd.get("name")
+        if name:
+            fields[name] = sd.text or ""
+    return fields
 
 
 def main() -> int:
-    package, root, package_id = discover_package()
-    resources = [
-        compact_resource(x)
-        for x in package.get("resources") or []
-        if isinstance(x, dict)
-    ]
+    raw = fetch()
+    root = ET.fromstring(raw)
+    placemarks = root.findall(".//kml:Placemark", NS)
+    rows = []
+    all_coords = []
 
-    probes = []
-    for resource in package.get("resources") or []:
-        if not isinstance(resource, dict):
-            continue
-        fmt = str(resource.get("format") or resource.get("mimetype") or "").casefold()
-        url = resource.get("url")
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-            continue
-        if not any(token in fmt for token in ("json", "geojson", "kml", "gml", "xml")):
-            continue
-        try:
-            probe = fetch_prefix(url)
-            probes.append({
-                "resource": compact_resource(resource),
-                "probe": probe,
-            })
-        except Exception as exc:
-            probes.append({
-                "resource": compact_resource(resource),
-                "error": f"{type(exc).__name__}: {exc}",
-            })
+    for pm in placemarks:
+        name = pm.findtext("kml:name", default="", namespaces=NS).strip()
+        fields = field_map(pm)
+        rings = []
+        for node in pm.findall(".//kml:Polygon//kml:outerBoundaryIs/kml:LinearRing/kml:coordinates", NS):
+            coords = parse_coord_text(node.text)
+            if len(coords) >= 4:
+                rings.append(coords)
+                all_coords.extend(coords)
+        rows.append({
+            "name": name,
+            "fields": fields,
+            "polygon_count": len(rings),
+            "coordinate_count": sum(len(x) for x in rings),
+        })
 
+    if not all_coords:
+        raise RuntimeError("KML contained no polygon coordinates")
+    lons = [x[0] for x in all_coords]
+    lats = [x[1] for x in all_coords]
     result = {
-        "source": "BMA Open Data CKAN",
-        "ckan_root": root,
-        "package_id_used": package_id,
-        "dataset_id": package.get("id"),
-        "name": package.get("name"),
-        "title": package.get("title"),
-        "metadata_modified": package.get("metadata_modified"),
-        "license_title": package.get("license_title"),
-        "resource_count": len(resources),
-        "resources": resources,
-        "lightweight_resource_probes": probes,
-        "expected_district_count": 50,
+        "source_url": URL,
+        "byte_count": len(raw),
+        "placemark_count": len(placemarks),
+        "polygon_placemark_count": sum(1 for x in rows if x["polygon_count"]),
+        "bbox_wgs84": {
+            "min_lon": min(lons),
+            "min_lat": min(lats),
+            "max_lon": max(lons),
+            "max_lat": max(lats),
+        },
+        "sample": rows[:8],
+        "names": [x["name"] for x in rows],
+        "field_names": sorted({
+            key for row in rows for key in row["fields"].keys()
+        }),
+        "validation": {
+            "expected_district_count": 50,
+            "district_count_ok": len([x for x in rows if x["polygon_count"]]) == 50,
+        },
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+    return 0 if result["validation"]["district_count_ok"] else 2
 
 
 if __name__ == "__main__":
