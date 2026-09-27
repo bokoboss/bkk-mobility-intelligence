@@ -12,30 +12,35 @@
       "id": "ram_inthra",
       "display_name": "Ram Inthra Road",
       "aliases": ["รามอินทรา", "ram inthra", "ramintra"],
-      "osm_exact_names": ["ถนนรามอินทรา"]
+      "osm_exact_names": ["ถนนรามอินทรา"],
+      "route_refs": ["304"]
     },
     {
       "id": "prasert_manukitch",
       "display_name": "Prasert-Manukitch Road",
       "aliases": ["ประเสริฐมนูกิจ", "เกษตร-นวมินทร์", "เกษตร–นวมินทร์", "kaset-navamin", "kaset nawa min", "prasert-manukitch", "prasert manukitch"],
-      "osm_exact_names": ["ถนนประเสริฐมนูกิจ"]
+      "osm_exact_names": ["ถนนประเสริฐมนูกิจ"],
+      "route_refs": ["351"]
     },
     {
       "id": "pradit_manutham",
       "display_name": "Pradit Manutham Road",
       "aliases": ["ประดิษฐ์มนูธรรม", "เลียบทางด่วน", "pradit manutham", "praditmanutham"],
-      "osm_exact_names": ["ถนนประดิษฐ์มนูธรรม"]
+      "osm_exact_names": ["ถนนประดิษฐ์มนูธรรม"],
+      "route_refs": []
     },
     {
       "id": "nuan_chan",
       "display_name": "Nuan Chan Road",
       "aliases": ["นวลจันทร์", "nuan chan", "nuanchan"],
-      "osm_exact_names": ["ถนนนวลจันทร์"]
+      "osm_exact_names": ["ถนนนวลจันทร์"],
+      "route_refs": []
     }
   ],
   "notes": [
     "The bbox is an extraction envelope, not a road-attribution rule.",
     "osm_exact_names are deliberately stricter than text aliases so side streets and similarly named roads are excluded from the core-road geometry.",
-    "Final road/segment matching must use road geometry and, when available, direction/heading."
+    "route_refs are supporting identity evidence only when an event is also geometrically close to the configured core road.",
+    "Final direction/segment matching should use geometry and, when available, heading."
   ]
 }

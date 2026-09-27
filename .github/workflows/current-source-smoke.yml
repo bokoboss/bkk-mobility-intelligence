@@ -45,7 +45,11 @@ jobs:
           python scripts/spatial/match_events_to_network.py \
             --events "$run_dir/events.study_area.json" \
             --network data/processed/osm/core_roads.geojson \
+            --config config/study_area.json \
             --output "$run_dir/events.network_matched.json"
+          python scripts/spatial/cluster_network_events.py \
+            --events "$run_dir/events.network_matched.json" \
+            --output "$run_dir/incidents.confirmed_clusters.json"
 
       - name: Optional Longdo current speed sample
         if: ${{ env.LONGDO_MAP_API_KEY != '' }}
