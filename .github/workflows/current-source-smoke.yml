@@ -13,6 +13,7 @@ on:
       - "scripts/live/**"
       - "scripts/spatial/**"
       - "scripts/analysis/**"
+      - "scripts/audit/**"
       - "scripts/history/**"
       - "scripts/build/**"
       - "web/**"
@@ -50,6 +51,9 @@ jobs:
           node --check web/app.js
           grep -q "maplibre-gl@5" web/index.html
           grep -q "tiles.openfreemap.org/styles/liberty" web/app.js
+
+      - name: One-time audit Longdo event search form
+        run: python scripts/audit/audit_longdo_event_search_form.py
 
       - name: Fetch current source bundle
         run: python scripts/live/fetch_current_bundle.py
