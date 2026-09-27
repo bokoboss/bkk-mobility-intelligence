@@ -43,6 +43,9 @@ jobs:
       - name: Fetch iTIC/Longdo camera metadata
         run: python scripts/live/fetch_itic_cameras.py
 
+      - name: Analyze Longdo Traffic Index baseline
+        run: python scripts/analysis/analyze_longdo_traffic_index.py
+
       - name: Fetch OSM core-road geometry
         run: python scripts/spatial/fetch_osm_network.py
 
@@ -68,6 +71,9 @@ jobs:
             --output data/processed/current_speed/longdo_speed.json \
             --max-points 8
 
+      - name: Build frontend-neutral Now snapshot
+        run: python scripts/build/build_now_snapshot.py
+
       - name: Print latest summary
         if: always()
         shell: bash
@@ -89,5 +95,7 @@ jobs:
             data/processed/osm/
             data/processed/current_speed/
             data/raw/current_context/
+            data/processed/current_context/
+            data/processed/now/
           if-no-files-found: warn
           retention-days: 3

@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""Fetch public iTIC/Longdo traffic-camera metadata and filter to pilot bbox.
-
-This stage handles metadata only. Camera imagery is treated as visual
-validation/context, not a quantitative traffic-speed source.
-"""
+"""Fetch public iTIC/Longdo traffic-camera metadata and assess pilot coverage."""
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
 import json
+import math
 from pathlib import Path
+import urllib.parse
 import urllib.request
 from typing import Any, Iterable
 
 DEFAULT_URL = "https://camera.longdo.com/feed/?command=json"
-USER_AGENT = "bkk-mobility-intelligence-phase0/0.5"
+USER_AGENT = "bkk-mobility-intelligence-phase0/0.6"
+EARTH_M = 6371008.8
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,6 +27,7 @@ def parse_args() -> argparse.Namespace:
         default=Path("data/raw/current_context/cameras.study_area.json"),
     )
     p.add_argument("--timeout", type=float, default=30.0)
+    p.add_argument("--nearest", type=int, default=10)
     return p.parse_args()
 
 
@@ -51,11 +51,7 @@ def to_float(value: Any) -> float | None:
 def extract_lat_lon(row: dict[str, Any]) -> tuple[float | None, float | None]:
     lower = {str(k).lower(): v for k, v in row.items()}
     lat = next(
-        (
-            to_float(lower[k])
-            for k in ("latitude", "lat", "y")
-            if k in lower
-        ),
+        (to_float(lower[k]) for k in ("latitude", "lat", "y") if k in lower),
         None,
     )
     lon = next(
@@ -94,20 +90,52 @@ def likely_camera_record(row: dict[str, Any]) -> bool:
     lat, lon = extract_lat_lon(row)
     if lat is None or lon is None:
         return False
-    lower_keys = {str(k).lower() for k in row}
-    return bool(
-        lower_keys
-        & {
-            "camid",
-            "camera_id",
-            "camcode",
-            "code",
-            "id",
-            "name",
-            "title",
-            "description",
-        }
+    return "camid" in {str(k).lower() for k in row} or "imgurl" in {
+        str(k).lower() for k in row
+    }
+
+
+def distance_to_bbox_m(
+    lat: float, lon: float, config: dict[str, Any]
+) -> float:
+    b = config["bbox_wgs84"]
+    clamped_lat = min(max(lat, b["min_lat"]), b["max_lat"])
+    clamped_lon = min(max(lon, b["min_lon"]), b["max_lon"])
+    lat0 = math.radians((lat + clamped_lat) / 2)
+    dy = math.radians(lat - clamped_lat) * EARTH_M
+    dx = (
+        math.radians(lon - clamped_lon)
+        * EARTH_M
+        * math.cos(lat0)
     )
+    return math.hypot(dx, dy)
+
+
+def normalized_camera(row: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    lat, lon = extract_lat_lon(row)
+    cid = camera_id(row)
+    return {
+        "camera_id": cid,
+        "title": row.get("title"),
+        "organization": row.get("organization"),
+        "latitude": lat,
+        "longitude": lon,
+        "lastupdate": row.get("lastupdate"),
+        "imgurl": row.get("imgurl"),
+        "imgurl_specific": row.get("imgurl_specific"),
+        "hls_url": row.get("hls_url"),
+        "distance_to_study_bbox_m": (
+            round(distance_to_bbox_m(lat, lon, config), 1)
+            if lat is not None and lon is not None
+            else None
+        ),
+        "official_jpeg_template": (
+            "https://cameras.iticfoundation.org/api/jpeg2.php?camid="
+            + urllib.parse.quote(cid, safe="")
+            if cid
+            else None
+        ),
+    }
 
 
 def main() -> int:
@@ -123,27 +151,35 @@ def main() -> int:
 
     parsed = json.loads(body.decode("utf-8-sig"))
     records = [r for r in recursive_dicts(parsed) if likely_camera_record(r)]
-
     keys = sorted({str(k) for row in records for k in row})
-    study: list[dict[str, Any]] = []
-    for row in records:
-        lat, lon = extract_lat_lon(row)
-        if not in_bbox(lat, lon, config):
-            continue
-        cid = camera_id(row)
-        out = dict(row)
-        out["_normalized"] = {
-            "camera_id": cid,
-            "latitude": lat,
-            "longitude": lon,
-            "jpeg_url": (
-                "https://cameras.iticfoundation.org/api/jpeg2.php?camid="
-                + urllib.parse.quote(cid, safe="")
-                if cid
-                else None
-            ),
-        }
-        study.append(out)
+
+    normalized = [normalized_camera(row, config) for row in records]
+    study = [
+        row
+        for row in normalized
+        if in_bbox(row["latitude"], row["longitude"], config)
+    ]
+    nearest = sorted(
+        normalized,
+        key=lambda x: (
+            x["distance_to_study_bbox_m"]
+            if x["distance_to_study_bbox_m"] is not None
+            else float("inf")
+        ),
+    )[: args.nearest]
+
+    within_1km = sum(
+        1
+        for row in normalized
+        if row["distance_to_study_bbox_m"] is not None
+        and row["distance_to_study_bbox_m"] <= 1000
+    )
+    within_3km = sum(
+        1
+        for row in normalized
+        if row["distance_to_study_bbox_m"] is not None
+        and row["distance_to_study_bbox_m"] <= 3000
+    )
 
     result = {
         "provider": "iTIC Foundation / Longdo Traffic Camera",
@@ -153,8 +189,11 @@ def main() -> int:
         "retrieved_at_utc": retrieved_at.isoformat(),
         "all_candidate_camera_records": len(records),
         "study_area_camera_records": len(study),
+        "within_1km_of_bbox": within_1km,
+        "within_3km_of_bbox": within_3km,
         "observed_keys": keys,
-        "records": study,
+        "study_area_records": study,
+        "nearest_cameras": nearest,
         "usage_note": (
             "Camera metadata/imagery is visual context only; it is not treated "
             "as quantitative segment speed."
@@ -171,7 +210,9 @@ def main() -> int:
             {
                 "all_candidate_camera_records": len(records),
                 "study_area_camera_records": len(study),
-                "observed_keys": keys[:80],
+                "within_1km_of_bbox": within_1km,
+                "within_3km_of_bbox": within_3km,
+                "nearest_cameras": nearest[:5],
                 "output": str(args.output),
             },
             ensure_ascii=False,
@@ -182,5 +223,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import urllib.parse
     raise SystemExit(main())
