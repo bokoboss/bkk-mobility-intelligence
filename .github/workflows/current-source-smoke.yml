@@ -25,6 +25,10 @@ permissions:
 jobs:
   current-source-smoke:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     timeout-minutes: 7
     env:
       LONGDO_MAP_API_KEY: ${{ secrets.LONGDO_MAP_API_KEY }}
@@ -113,11 +117,11 @@ jobs:
           retention-days: 3
 
       - name: Configure GitHub Pages
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_pages }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.deploy_pages) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-pages]')) }}
         uses: actions/configure-pages@v5
 
       - name: Upload GitHub Pages artifact
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_pages }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.deploy_pages) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-pages]')) }}
         uses: actions/upload-pages-artifact@v4
         with:
           path: dist/
@@ -138,7 +142,7 @@ jobs:
           retention-days: 3
 
   deploy-pages:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_pages }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.deploy_pages) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-pages]')) }}
     needs: current-source-smoke
     runs-on: ubuntu-latest
     permissions:
