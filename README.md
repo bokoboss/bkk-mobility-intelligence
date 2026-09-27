@@ -1,0 +1,77 @@
+# BKK Mobility Intelligence
+
+A proof-of-concept project for turning Bangkok mobility and disruption data into decision-useful transportation intelligence.
+
+> **Current stage:** Phase 0 — Data Feasibility Audit  
+> This repository intentionally starts with data validation and analytical feasibility before building the web application.
+
+## POC question
+
+Can we select one real Bangkok corridor and reliably explain:
+
+- how traffic performance changes by time of day,
+- where recurring congestion occurs,
+- what disruptions/incidents occur nearby,
+- how conditions differ during disruption periods,
+- and what additional survey data would still be required for a professional traffic study?
+
+## Initial data source
+
+### iTIC traffic incidents
+
+The initial live incident feed is:
+
+- `https://event.longdo.com/feed/json`
+
+**Primary attribution:** Intelligent Traffic Information Center Foundation (**iTIC Foundation**), via the iTIC / Longdo Traffic event feed.
+
+Official references:
+
+- iTIC Foundation — Open Data Sharing: https://iticfoundation.org/en/open-data-sharing/
+- iTIC Open Data Archives: https://itic.longdo.com/data/
+- iTIC / Longdo Traffic Data Feeds: https://traffic.longdo.com/feed/
+- Live event feed: https://event.longdo.com/feed/json
+
+The official Traffic Data Feeds page describes the Events RSS/JSON feed as the latest incidents and events collected at iTIC via `events.longdo.com`.
+
+### Licensing note
+
+The iTIC Open Data Archives explicitly list **Historical Traffic Incidents**, **Historical Traffic Information Status**, and **Historical Raw Vehicle & Mobile Probe Data** under **CC-BY 4.0**. The live event feed is treated separately until its applicable terms are verified; this project does not assume that the archive license automatically applies to every live endpoint.
+
+## Phase 0
+
+Before building the application, the project will audit candidate datasets for:
+
+- spatial coverage,
+- temporal coverage and resolution,
+- schema and coordinate system,
+- missing/duplicate records,
+- directionality and road matching,
+- historical depth,
+- access method and file size,
+- licensing / attribution requirements,
+- analytical usefulness for a Bangkok corridor.
+
+See:
+- `docs/POC_SCOPE.md`
+- `docs/DATA_SOURCES.md`
+
+## Planned progression
+
+1. **P0 — Data Feasibility Audit**
+2. **P1 — Analytics Prototype**
+3. **P2 — Mobility Intelligence Explorer**
+4. **P3 — User / stakeholder validation**
+5. **P4 — Production architecture decision**
+
+## Scope discipline
+
+This is not intended to become another generic traffic map. The target is an analytical engine that converts mobility, incident, weather/flood, road-network, traffic-volume and safety data into corridor-level transportation intelligence.
+
+## Data attribution
+
+When iTIC-derived data is displayed, exported, analysed or cited, the project will preserve source attribution to:
+
+**Intelligent Traffic Information Center Foundation (iTIC Foundation)**
+
+Additional source-specific attribution and licensing requirements will be recorded in `docs/DATA_SOURCES.md`.
