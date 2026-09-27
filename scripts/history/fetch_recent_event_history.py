@@ -122,6 +122,11 @@ def main() -> int:
         last_modified = resp.headers.get("Last-Modified")
         wrapped = io.TextIOWrapper(resp, encoding="utf-8-sig", newline="")
         reader = csv.DictReader(wrapped)
+        if reader.fieldnames:
+            reader.fieldnames = [
+                str(name or "").lstrip("\ufeff").strip()
+                for name in reader.fieldnames
+            ]
         expected = {
             "eid", "title", "title_en", "description", "description_en",
             "latitude", "longitude", "type", "start", "stop", "contributor",
