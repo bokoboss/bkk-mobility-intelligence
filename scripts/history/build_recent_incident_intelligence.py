@@ -225,14 +225,20 @@ def ranked_counts(items: list[dict[str, Any]], key: str, labels: dict[str, str] 
 
 
 def daily_counts(items: list[dict[str, Any]], anchor: dt.datetime, days: int) -> list[dict[str, Any]]:
-    start_date = (anchor - dt.timedelta(days=days)).date()
+    # Rolling N-day windows can touch N+1 calendar dates when the anchor is
+    # mid-day. Keep both partial boundary dates so the daily buckets sum to the
+    # window incident count.
+    start = anchor - dt.timedelta(days=days)
+    start_date = start.date()
+    end_date = anchor.date()
+    bucket_days = (end_date - start_date).days + 1
     counts: dict[str, int] = {}
-    for i in range(days):
+    for i in range(bucket_days):
         d = start_date + dt.timedelta(days=i)
         counts[d.isoformat()] = 0
     for item in items:
         t = cluster_time(item)
-        if t:
+        if t and start <= t < anchor:
             key = t.date().isoformat()
             if key in counts:
                 counts[key] += 1
@@ -257,9 +263,12 @@ def window_summary(
         "event_type",
         {k: v["th"] for k, v in EVENT_TYPES.items()},
     )
+    start = anchor - dt.timedelta(days=days)
     return {
         "incident_count": len(items),
         "road_count": len(roads),
+        "window_start_ict": start.isoformat(),
+        "window_end_ict": anchor.isoformat(),
         "top_roads": roads[:10],
         "top_event_types": types[:10],
         "daily_counts": daily_counts(items, anchor, days),

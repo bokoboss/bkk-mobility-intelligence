@@ -67,3 +67,26 @@ The ingestion manifest compares the newest `createtime` returned by
 `/event.json` with the live-feed retrieval anchor. 7D/30D analytics are built
 only when the recent-search source is within three hours of the anchor.
 Otherwise the pipeline fails closed instead of rendering misleading zero counts.
+
+
+## Live validation — 2026-09-27
+
+Validated against the live Longdo event search database at approximately
+15:25 ICT:
+
+- source coverage lag: **1.13 minutes**;
+- pages fetched: **7** at up to 1,000 records/page;
+- unique events returned for the 30-day query: **6,825**;
+- Expanded V1 rows before road confirmation: **943**;
+- confirmed episode clusters in latest 7 days: **209**;
+- confirmed episode clusters in prior 7 days: **74**;
+- confirmed episode clusters in latest 30 days: **401**;
+- roads represented in latest 7 days: **36**;
+- roads represented in latest 30 days: **43**.
+
+Thirty-day leading event types in this validation run were flood (150),
+accident (108), rain (59), breakdown (34), and traffic jam (30).
+
+The latest 7-day count is substantially above the prior 7-day count and is
+dominated by flood reports. This is presented descriptively; it is not a claim
+that traffic performance or safety risk increased by the same percentage.

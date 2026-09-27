@@ -87,6 +87,19 @@ class HistoryIntelligenceTests(unittest.TestCase):
         clusters = history.build_episode_clusters(rows)
         self.assertEqual(len(clusters), 2)
 
+    def test_daily_buckets_cover_rolling_window_boundaries(self):
+        import datetime as dt
+        ict = dt.timezone(dt.timedelta(hours=7))
+        anchor = dt.datetime(2026, 9, 27, 15, 0, tzinfo=ict)
+        items = [
+            {"first_start": "2026-09-20T16:00:00+07:00"},
+            {"first_start": "2026-09-27T14:00:00+07:00"},
+        ]
+        buckets = history.daily_counts(items, anchor, 7)
+        self.assertEqual(sum(x["count"] for x in buckets), 2)
+        self.assertEqual(buckets[0]["date"], "2026-09-20")
+        self.assertEqual(buckets[-1]["date"], "2026-09-27")
+
     def test_delta_pct(self):
         self.assertEqual(history.delta_pct(12, 10), 20.0)
         self.assertEqual(history.delta_pct(0, 0), None)
