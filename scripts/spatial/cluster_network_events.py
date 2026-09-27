@@ -93,6 +93,9 @@ def build_clusters(
                     key.encode("utf-8")
                 ).hexdigest()[:12],
                 "road_id": road_id,
+                "district_id": representative.get("district_id"),
+                "district_name_th": representative.get("district_name_th"),
+                "district_name_en": representative.get("district_name_en"),
                 "title": representative.get("title"),
                 "event_type": representative.get("type"),
                 "latitude": float(representative["latitude"]),

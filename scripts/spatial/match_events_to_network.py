@@ -129,14 +129,48 @@ def candidate_title_support(
     return False
 
 
+def build_spatial_index(
+    network: dict[str, Any], cell_deg: float = 0.01
+) -> dict[str, Any]:
+    cells: dict[tuple[int, int], list[int]] = {}
+    features = network.get("features", [])
+    for idx, feature in enumerate(features):
+        coords = (feature.get("geometry") or {}).get("coordinates") or []
+        if len(coords) < 2:
+            continue
+        lons = [float(p[0]) for p in coords]
+        lats = [float(p[1]) for p in coords]
+        x0, x1 = math.floor(min(lons) / cell_deg), math.floor(max(lons) / cell_deg)
+        y0, y1 = math.floor(min(lats) / cell_deg), math.floor(max(lats) / cell_deg)
+        for x in range(x0, x1 + 1):
+            for y in range(y0, y1 + 1):
+                cells.setdefault((x, y), []).append(idx)
+    return {"cell_deg": cell_deg, "cells": cells, "features": features}
+
+
+def indexed_features(
+    lon: float, lat: float, index: dict[str, Any]
+) -> list[dict[str, Any]]:
+    cell = float(index["cell_deg"])
+    x, y = math.floor(lon / cell), math.floor(lat / cell)
+    ids = set()
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            ids.update(index["cells"].get((x + dx, y + dy), []))
+    return [index["features"][i] for i in ids]
+
+
 def nearest_by_road(
-    event: dict[str, Any], network: dict[str, Any]
+    event: dict[str, Any],
+    network: dict[str, Any],
+    spatial_index: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     lat = float(event["latitude"])
     lon = float(event["longitude"])
     best: dict[str, dict[str, Any]] = {}
+    features = indexed_features(lon, lat, spatial_index) if spatial_index else network.get("features", [])
 
-    for feature in network.get("features", []):
+    for feature in features:
         props = feature.get("properties") or {}
         rid = props.get("road_id")
         coords = (feature.get("geometry") or {}).get("coordinates") or []
@@ -234,6 +268,7 @@ def main() -> int:
     events = json.loads(args.events.read_text(encoding="utf-8"))
     network = json.loads(args.network.read_text(encoding="utf-8"))
 
+    spatial_index = build_spatial_index(network)
     out: list[dict[str, Any]] = []
     classes: dict[str, int] = {}
     candidate_counts: dict[str, int] = {}
@@ -242,7 +277,7 @@ def main() -> int:
     for event in events:
         match = classify(
             event,
-            nearest_by_road(event, network),
+            nearest_by_road(event, network, spatial_index),
             args.strong_distance_m,
             args.candidate_distance_m,
         )
@@ -268,6 +303,8 @@ def main() -> int:
         json.dumps(
             {
                 "events": len(out),
+                "spatial_index_cells": len(spatial_index["cells"]),
+                "network_feature_count": len(spatial_index["features"]),
                 "match_classes": classes,
                 "candidate_road_records": candidate_counts,
                 "confirmed_road_records": confirmed_counts,

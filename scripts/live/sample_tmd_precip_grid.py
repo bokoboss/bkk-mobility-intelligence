@@ -207,9 +207,14 @@ def road_aggregates(network: dict[str, Any], points: list[dict[str, Any]]) -> li
                 "road_id": str(road_id),
                 "road_name": props.get("display_name") or str(road_id),
                 "priority": bool(props.get("priority")),
+                "network_tier": props.get("network_tier"),
+                "district_ids": set(),
+                "district_names": set(),
                 "cell_indexes": set(),
             },
         )
+        group["district_ids"].update(props.get("district_ids") or [])
+        group["district_names"].update(props.get("district_names") or [])
         for lon, lat in iter_line_coords(feature):
             group["cell_indexes"].add(nearest_point_index(lon, lat, points))
 
@@ -226,6 +231,9 @@ def road_aggregates(network: dict[str, Any], points: list[dict[str, Any]]) -> li
                 "road_id": group["road_id"],
                 "road_name": group["road_name"],
                 "priority": group["priority"],
+                "network_tier": group.get("network_tier"),
+                "district_ids": sorted(group.get("district_ids") or []),
+                "district_names": sorted(group.get("district_names") or []),
                 "grid_cell_count": len(values),
                 "next_24h_mean_mm": round(sum(values) / len(values), 2),
                 "next_24h_p90_mm": round(percentile(values, 0.9) or 0.0, 2),

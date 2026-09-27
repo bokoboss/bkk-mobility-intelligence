@@ -31,6 +31,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("data/processed/flood/flood_intelligence.json"),
     )
+    p.add_argument(
+        "--districts",
+        type=Path,
+        default=Path("data/reference/bangkok_districts.geojson"),
+    )
     return p.parse_args()
 
 
@@ -57,12 +62,23 @@ def render_network(network: dict[str, Any]) -> dict[str, Any]:
                     "road_id": rid,
                     "display_name": props.get("display_name") or rid,
                     "priority": bool(props.get("priority")),
+                    "network_tier": props.get("network_tier"),
+                    "district_ids": list(props.get("district_ids") or []),
+                    "district_names": list(props.get("district_names") or []),
                 },
                 "lines": [],
             },
         )
         group["properties"]["priority"] = (
             group["properties"]["priority"] or bool(props.get("priority"))
+        )
+        if props.get("network_tier") == "STRATEGIC":
+            group["properties"]["network_tier"] = "STRATEGIC"
+        group["properties"]["district_ids"] = sorted(
+            set(group["properties"].get("district_ids") or []) | set(props.get("district_ids") or [])
+        )
+        group["properties"]["district_names"] = sorted(
+            set(group["properties"].get("district_names") or []) | set(props.get("district_names") or [])
         )
         group["lines"].append(rounded_line(coords))
 
@@ -108,6 +124,7 @@ def main() -> int:
         args.network,
         args.history,
         args.flood,
+        args.districts,
     ]
     missing = [str(path) for path in required if not path.exists()]
     if missing:
@@ -125,6 +142,16 @@ def main() -> int:
     shutil.copy2(args.status, data_dir / "latest_status.json")
     shutil.copy2(args.history, data_dir / "recent_incident_intelligence.json")
     shutil.copy2(args.flood, data_dir / "flood_intelligence.json")
+
+    import sys
+    sys.path.insert(0, str(Path("scripts/spatial").resolve()))
+    import geo_admin
+    district_doc = json.loads(args.districts.read_text(encoding="utf-8"))
+    web_districts = geo_admin.normalized_district_geojson(district_doc, decimals=5)
+    (data_dir / "bangkok_districts.geojson").write_text(
+        json.dumps(web_districts, ensure_ascii=False, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
 
     full_network = json.loads(args.network.read_text(encoding="utf-8"))
     web_network = render_network(full_network)
@@ -149,6 +176,7 @@ def main() -> int:
             "data/core_roads.geojson",
             "data/recent_incident_intelligence.json",
             "data/flood_intelligence.json",
+            "data/bangkok_districts.geojson",
         ],
     }
     (data_dir / "build_info.json").write_text(

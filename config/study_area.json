@@ -1,21 +1,36 @@
 {
-  "id": "bkk_ne_expanded_v1",
-  "name": "Northeast Bangkok Expanded Mobility Pilot",
+  "id": "bkk_citywide_v1",
+  "name": "Bangkok-wide Mobility Intelligence",
   "bbox_wgs84": {
-    "min_lon": 100.57,
-    "min_lat": 13.755,
-    "max_lon": 100.79,
-    "max_lat": 13.93
+    "min_lon": 100.32618858616179,
+    "min_lat": 13.494275421045868,
+    "max_lon": 100.93965403708306,
+    "max_lat": 13.95198557600562
+  },
+  "admin_geometry": {
+    "path": "data/reference/bangkok_districts.geojson",
+    "district_count": 50,
+    "staging_source": "pcrete/gsvloader-demo geojson/Bangkok-districts.geojson",
+    "staging_source_blob_sha": "a268fe2f4e400f5b1e630aa2182cada10ea531ec",
+    "staging_license": "MIT",
+    "official_reference": "BMA Open Data: พื้นที่เขตปกครอง 50 เขตของกรุงเทพมหานคร",
+    "official_resource_url": "https://data.bangkok.go.th/dataset/e537025b-1cf6-4c5b-8e46-c2e976f13283/resource/0f40f9b4-617b-46a9-8806-f590da610954/download/district.kml",
+    "official_endpoint_status": "AUTOMATED_ACCESS_UNSTABLE_2026-09-27"
   },
   "network": {
     "include_highway_classes": [
+      "motorway",
       "trunk",
       "primary",
       "secondary",
       "tertiary"
     ],
+    "tile_rows": 3,
+    "tile_cols": 3,
     "min_group_length_m": 900,
-    "max_nonpriority_roads": 60,
+    "min_group_length_m_strategic": 300,
+    "min_group_length_m_urban": 1200,
+    "max_nonpriority_roads": 0,
     "exclude_name_patterns": [
       "ทางบริการ",
       "service road",
@@ -26,17 +41,9 @@
     {
       "id": "ram_inthra",
       "display_name": "ถนนรามอินทรา",
-      "aliases": [
-        "รามอินทรา",
-        "ram inthra",
-        "ramintra"
-      ],
-      "osm_exact_names": [
-        "ถนนรามอินทรา"
-      ],
-      "route_refs": [
-        "304"
-      ],
+      "aliases": ["รามอินทรา", "ram inthra", "ramintra"],
+      "osm_exact_names": ["ถนนรามอินทรา"],
+      "route_refs": ["304"],
       "priority": true
     },
     {
@@ -51,50 +58,34 @@
         "prasert-manukitch",
         "prasert manukitch"
       ],
-      "osm_exact_names": [
-        "ถนนประเสริฐมนูกิจ"
-      ],
-      "route_refs": [
-        "351"
-      ],
+      "osm_exact_names": ["ถนนประเสริฐมนูกิจ"],
+      "route_refs": ["351"],
       "priority": true
     },
     {
       "id": "pradit_manutham",
       "display_name": "ถนนประดิษฐ์มนูธรรม",
-      "aliases": [
-        "ประดิษฐ์มนูธรรม",
-        "เลียบทางด่วน",
-        "pradit manutham",
-        "praditmanutham"
-      ],
-      "osm_exact_names": [
-        "ถนนประดิษฐ์มนูธรรม"
-      ],
+      "aliases": ["ประดิษฐ์มนูธรรม", "เลียบทางด่วน", "pradit manutham", "praditmanutham"],
+      "osm_exact_names": ["ถนนประดิษฐ์มนูธรรม"],
       "route_refs": [],
       "priority": true
     },
     {
       "id": "nuan_chan",
       "display_name": "ถนนนวลจันทร์",
-      "aliases": [
-        "นวลจันทร์",
-        "nuan chan",
-        "nuanchan"
-      ],
-      "osm_exact_names": [
-        "ถนนนวลจันทร์"
-      ],
+      "aliases": ["นวลจันทร์", "nuan chan", "nuanchan"],
+      "osm_exact_names": ["ถนนนวลจันทร์"],
       "route_refs": [],
       "priority": true
     }
   ],
   "notes": [
-    "The bbox is an analytical extraction envelope, not an administrative boundary.",
-    "Priority roads retain stable IDs and display emphasis.",
-    "Additional named trunk/primary/secondary/tertiary roads are discovered dynamically from OpenStreetMap.",
-    "Short road-name groups are filtered by total in-area length to reduce local streets and clutter.",
-    "Incident confirmation requires geometry plus road-name or route-ref identity evidence.",
-    "Expanded v1 is intentionally tightened to avoid pulling Din Daeng/Phetchaburi/Ngam Wong Wan into the Northeast Bangkok pilot."
+    "Bangkok-wide v1 covers the 50 Bangkok administrative districts.",
+    "The bbox is derived from the staged 50-district geometry and is only an extraction envelope.",
+    "Events are clipped to district polygons before road matching, so bbox corner areas outside Bangkok are excluded.",
+    "Strategic network: named motorway/trunk/primary/secondary roads.",
+    "Urban network: named tertiary roads with sufficient in-Bangkok length.",
+    "The four original pilot roads retain stable IDs as focus roads, but the analytical scope is citywide.",
+    "BMA official district geometry remains the intended authoritative replacement when automated access is stable."
   ]
 }

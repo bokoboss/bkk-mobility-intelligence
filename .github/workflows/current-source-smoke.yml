@@ -20,6 +20,7 @@ on:
       - "scripts/build/**"
       - "web/**"
       - "config/study_area.json"
+      - "data/reference/**"
       - "tests/**"
       - ".github/workflows/current-source-smoke.yml"
 
@@ -34,7 +35,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       LONGDO_MAP_API_KEY: ${{ secrets.LONGDO_MAP_API_KEY }}
     steps:
@@ -86,18 +87,21 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/processed/osm/core_roads.geojson
-          key: osm-expanded-roads-v1-${{ hashFiles('config/study_area.json') }}
+          key: osm-bangkok-citywide-v1-${{ hashFiles('config/study_area.json', 'data/reference/bangkok_districts.geojson') }}
 
-      - name: Fetch OSM core-road geometry
-        run: python scripts/spatial/fetch_osm_network.py
+      - name: Fetch Bangkok-wide OSM road geometry
+        run: python scripts/spatial/fetch_bangkok_network.py
 
       - name: Match current events to core-road geometry
         shell: bash
         run: |
           manifest=$(python -c 'import json; print(json.load(open("data/raw/current/latest.json"))["manifest"])')
           run_dir=$(dirname "$manifest")
-          python scripts/spatial/match_events_to_network.py \
+          python scripts/spatial/assign_districts.py \
             --events "$run_dir/events.study_area.json" \
+            --output "$run_dir/events.bangkok.json"
+          python scripts/spatial/match_events_to_network.py \
+            --events "$run_dir/events.bangkok.json" \
             --network data/processed/osm/core_roads.geojson \
             --config config/study_area.json \
             --output "$run_dir/events.network_matched.json"
@@ -109,8 +113,11 @@ jobs:
         shell: bash
         run: |
           python scripts/history/fetch_recent_event_history.py
-          python scripts/spatial/match_events_to_network.py \
+          python scripts/spatial/assign_districts.py \
             --events data/raw/history/recent_30d.study_area.json \
+            --output data/processed/history/recent_30d.bangkok.json
+          python scripts/spatial/match_events_to_network.py \
+            --events data/processed/history/recent_30d.bangkok.json \
             --network data/processed/osm/core_roads.geojson \
             --config config/study_area.json \
             --output data/processed/history/recent_30d.network_matched.json

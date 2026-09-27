@@ -156,6 +156,9 @@ def build_episode_clusters(events: list[dict[str, Any]]) -> list[dict[str, Any]]
                     "cluster_id": hashlib.sha1(episode_seed.encode("utf-8")).hexdigest()[:12],
                     "road_id": rep.get("confirmed_road_id"),
                     "road_name": rep.get("confirmed_road_name"),
+                    "district_id": rep.get("district_id"),
+                    "district_name_th": rep.get("district_name_th"),
+                    "district_name_en": rep.get("district_name_en"),
                     "title": rep.get("title"),
                     "event_type": str(rep.get("type") or ""),
                     "event_type_name": EVENT_TYPES.get(str(rep.get("type") or ""), {}).get("th"),
@@ -258,6 +261,11 @@ def window_summary(
     days: int,
 ) -> dict[str, Any]:
     roads = ranked_counts(items, "road_id", road_labels)
+    district_labels = {
+        str(x.get("district_id")): str(x.get("district_name_th") or x.get("district_id"))
+        for x in items if x.get("district_id")
+    }
+    districts = ranked_counts(items, "district_id", district_labels)
     types = ranked_counts(
         items,
         "event_type",
@@ -267,9 +275,11 @@ def window_summary(
     return {
         "incident_count": len(items),
         "road_count": len(roads),
+        "district_count": len(districts),
         "window_start_ict": start.isoformat(),
         "window_end_ict": anchor.isoformat(),
         "top_roads": roads[:10],
+        "top_districts": districts[:15],
         "top_event_types": types[:10],
         "daily_counts": daily_counts(items, anchor, days),
         "clusters": items,
