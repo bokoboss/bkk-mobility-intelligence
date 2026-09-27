@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local environment
+.env
+.env.*
+
+# Raw / derived mobility data (large files must not be committed)
+data/raw/*
+data/processed/*
+data/cache/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/cache/.gitkeep
+
+# Analytical local stores
+*.duckdb
+*.parquet
+*.geoparquet
+*.tar
+*.tar.bz2
+*.gz
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
