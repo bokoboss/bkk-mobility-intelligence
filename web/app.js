@@ -483,7 +483,7 @@
         + '<div class="road-th">' + (road.priority ? "PRIORITY ROAD" : "EXPANDED NETWORK") + "</div>"
         + '<div class="road-card-stats">'
         + '<div class="road-stat"><span>NOW INCIDENTS</span><strong>' + incidentsNow + "</strong></div>"
-        + '<div class="road-stat"><span>LAST 7 DAYS</span><strong>' + incidents7d + "</strong></div>'
+        + '<div class="road-stat"><span>LAST 7 DAYS</span><strong>' + incidents7d + "</strong></div>"
         + "</div>"
         + '<div class="road-card-note">'
         + (incidentsNow ? "พบ incident ที่ยืนยันกับแนวถนนใน feed ปัจจุบัน" : "ยังไม่พบ incident ปัจจุบันที่ยืนยันได้")
