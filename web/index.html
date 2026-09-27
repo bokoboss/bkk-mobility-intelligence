@@ -66,7 +66,12 @@
             <div id="interactiveMap" role="application" aria-label="แผนที่ออนไลน์ของเครือข่ายถนนหลักและเหตุการณ์ล่าสุด"></div>
             <div class="map-loading" id="mapLoading">กำลังโหลด OpenFreeMap…</div>
             <div class="map-toolbar">
-              <button id="fitAreaButton" class="map-tool-button" type="button">Fit Study Area</button>
+              <div class="map-window-switch" id="mapWindowSwitch">
+                <button class="map-window-button is-active" data-window="now" type="button">Now</button>
+                <button class="map-window-button" data-window="7d" type="button">7 Days</button>
+                <button class="map-window-button" data-window="30d" type="button">30 Days</button>
+              </div>
+              <button id="fitAreaButton" class="map-tool-button" type="button">Fit Area</button>
               <span class="map-provider">OpenFreeMap · OSM</span>
             </div>
           </div>
@@ -77,11 +82,41 @@
 
         <aside class="panel incident-panel">
           <div class="panel-heading panel-heading--stack">
-            <div><div class="panel-kicker">INCIDENT FEED</div><h2>เหตุที่ยืนยันได้</h2></div>
+            <div><div class="panel-kicker">INCIDENT FEED</div><h2 id="incidentPanelTitle">เหตุที่ยืนยันได้ตอนนี้</h2></div>
             <div class="filter-row" id="incidentFilters"></div>
           </div>
           <div class="incident-list" id="incidentList"></div>
         </aside>
+      </section>
+
+      <section class="section-heading">
+        <div><div class="panel-kicker">RECENT INCIDENT INTELLIGENCE</div><h2>7 วัน / 30 วันล่าสุด</h2></div>
+        <p>นับเป็น episode ที่ยืนยันถนนแล้ว โดยรวม update ต่อเนื่องของเหตุเดียวกันก่อนสรุปแนวโน้ม</p>
+      </section>
+      <section class="history-overview">
+        <article class="history-stat">
+          <span>LAST 7 DAYS</span>
+          <strong id="history7Count">—</strong>
+          <small id="history7Roads">—</small>
+        </article>
+        <article class="history-stat">
+          <span>VS PRIOR 7 DAYS</span>
+          <strong id="historyTrend">—</strong>
+          <small id="historyPriorCount">—</small>
+        </article>
+        <article class="history-stat">
+          <span>LAST 30 DAYS</span>
+          <strong id="history30Count">—</strong>
+          <small id="history30Roads">—</small>
+        </article>
+        <article class="history-rank">
+          <div class="history-rank-title">ถนนที่มีเหตุซ้ำสูงสุด · 30 วัน</div>
+          <div id="historyTopRoads"></div>
+        </article>
+        <article class="history-rank">
+          <div class="history-rank-title">ประเภทเหตุสูงสุด · 30 วัน</div>
+          <div id="historyTopTypes"></div>
+        </article>
       </section>
 
       <section class="section-heading">

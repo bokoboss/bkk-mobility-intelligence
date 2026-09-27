@@ -23,6 +23,14 @@ def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().casefold())
 
 
+def normalize_cluster_title(value: Any) -> str:
+    text = normalize_text(value)
+    for prefix in ("คืบหน้าเหตุ", "คืบหน้า", "อัปเดต", "update:", "update "):
+        if text.startswith(prefix):
+            return text[len(prefix):].strip(" :-")
+    return text
+
+
 def is_route_segment_event(event: dict[str, Any]) -> bool:
     title = normalize_text(event.get("title"))
     refs = event.get("event_route_refs") or []
@@ -33,7 +41,7 @@ def cluster_key(event: dict[str, Any], coord_decimals: int) -> str:
     base = [
         str(event.get("confirmed_road_id") or ""),
         str(event.get("type") or ""),
-        normalize_text(event.get("title")),
+        normalize_cluster_title(event.get("title")),
     ]
     if is_route_segment_event(event):
         # Route feeds can publish several point records for the same named

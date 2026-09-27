@@ -21,6 +21,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", type=Path, default=Path("dist"))
     p.add_argument("--status", type=Path, default=Path("data/processed/now/latest_status.json"))
     p.add_argument("--network", type=Path, default=Path("data/processed/osm/core_roads.geojson"))
+    p.add_argument(
+        "--history",
+        type=Path,
+        default=Path("data/processed/history/recent_incident_intelligence.json"),
+    )
     return p.parse_args()
 
 
@@ -96,6 +101,7 @@ def main() -> int:
         args.web_dir / "app.js",
         args.status,
         args.network,
+        args.history,
     ]
     missing = [str(path) for path in required if not path.exists()]
     if missing:
@@ -111,6 +117,7 @@ def main() -> int:
         shutil.copy2(args.web_dir / name, args.output_dir / name)
 
     shutil.copy2(args.status, data_dir / "latest_status.json")
+    shutil.copy2(args.history, data_dir / "recent_incident_intelligence.json")
 
     full_network = json.loads(args.network.read_text(encoding="utf-8"))
     web_network = render_network(full_network)
@@ -133,6 +140,7 @@ def main() -> int:
             "app.js",
             "data/latest_status.json",
             "data/core_roads.geojson",
+            "data/recent_incident_intelligence.json",
         ],
     }
     (data_dir / "build_info.json").write_text(

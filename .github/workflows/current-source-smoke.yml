@@ -13,6 +13,7 @@ on:
       - "scripts/live/**"
       - "scripts/spatial/**"
       - "scripts/analysis/**"
+      - "scripts/history/**"
       - "scripts/build/**"
       - "web/**"
       - "config/study_area.json"
@@ -29,7 +30,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    timeout-minutes: 7
+    timeout-minutes: 10
     env:
       LONGDO_MAP_API_KEY: ${{ secrets.LONGDO_MAP_API_KEY }}
     steps:
@@ -85,6 +86,18 @@ jobs:
             --events "$run_dir/events.network_matched.json" \
             --output "$run_dir/incidents.confirmed_clusters.json"
 
+      - name: Build recent 7/30-day incident intelligence
+        shell: bash
+        run: |
+          python scripts/history/fetch_recent_event_history.py
+          python scripts/spatial/match_events_to_network.py \
+            --events data/raw/history/recent_30d.study_area.json \
+            --network data/processed/osm/core_roads.geojson \
+            --config config/study_area.json \
+            --output data/processed/history/recent_30d.network_matched.json
+          python scripts/history/build_recent_incident_intelligence.py \
+            --events data/processed/history/recent_30d.network_matched.json
+
       - name: Optional Longdo current speed sample
         if: ${{ env.LONGDO_MAP_API_KEY != '' }}
         run: |
@@ -100,7 +113,7 @@ jobs:
         run: |
           python scripts/build/build_static_site.py
           test -s dist/index.html
-          python -c 'import json; json.load(open("dist/data/latest_status.json", encoding="utf-8")); json.load(open("dist/data/core_roads.geojson", encoding="utf-8"))'
+          python -c 'import json; json.load(open("dist/data/latest_status.json", encoding="utf-8")); json.load(open("dist/data/core_roads.geojson", encoding="utf-8")); json.load(open("dist/data/recent_incident_intelligence.json", encoding="utf-8"))'
 
       - name: Print latest summary
         if: always()
@@ -142,7 +155,9 @@ jobs:
             data/processed/osm/
             data/processed/current_speed/
             data/raw/current_context/
+            data/raw/history/
             data/processed/current_context/
+            data/processed/history/
             data/processed/now/
           if-no-files-found: warn
           retention-days: 3

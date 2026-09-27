@@ -21,7 +21,9 @@
 
   let statusData = null;
   let networkData = null;
+  let historyData = null;
   let selectedRoad = "all";
+  let activeWindow = "now";
   let map = null;
   let mapReady = false;
 
@@ -93,17 +95,82 @@
     return incidents.sort((a, b) => String(b.latest_start || "").localeCompare(String(a.latest_start || "")));
   }
 
+  function windowIncidents(windowId = activeWindow) {
+    if (windowId === "now") return allIncidents();
+    return [...(historyData?.windows?.[windowId]?.clusters || [])]
+      .sort((a, b) => String(b.latest_start || "").localeCompare(String(a.latest_start || "")));
+  }
+
+  function windowRoadCount(roadId, windowId = activeWindow) {
+    return windowIncidents(windowId).filter((item) => item.road_id === roadId).length;
+  }
+
+  function displayWindowLabel() {
+    if (activeWindow === "7d") return "7 วันล่าสุด";
+    if (activeWindow === "30d") return "30 วันล่าสุด";
+    return "ตอนนี้";
+  }
+
   function priorityRoadIds() {
     return Object.entries(statusData?.roads || {})
       .filter(([, road]) => road.priority)
       .map(([id]) => id);
   }
 
-  function incidentRoadIds() {
-    return Object.entries(statusData?.roads || {})
-      .filter(([, road]) => (road.confirmed_incident_count || 0) > 0)
-      .sort((a, b) => (b[1].confirmed_incident_count || 0) - (a[1].confirmed_incident_count || 0))
+  function incidentRoadIds(windowId = activeWindow) {
+    const counts = {};
+    windowIncidents(windowId).forEach((item) => {
+      if (item.road_id) counts[item.road_id] = (counts[item.road_id] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
       .map(([id]) => id);
+  }
+
+  function renderHistorySummary() {
+    if (!historyData) return;
+    const w7 = historyData.windows?.["7d"] || {};
+    const w30 = historyData.windows?.["30d"] || {};
+    const trend = historyData.trend || {};
+
+    $("history7Count").textContent = w7.incident_count ?? "—";
+    $("history7Roads").textContent = "บน " + (w7.road_count ?? "—") + " ถนน";
+    $("history30Count").textContent = w30.incident_count ?? "—";
+    $("history30Roads").textContent = "บน " + (w30.road_count ?? "—") + " ถนน";
+
+    const change = trend.absolute_change;
+    const pct = trend.percent_change;
+    $("historyTrend").textContent = change == null
+      ? "—"
+      : (change > 0 ? "+" : "") + change + (pct == null ? "" : " (" + (pct > 0 ? "+" : "") + pct + "%)");
+    $("historyPriorCount").textContent = "7 วันก่อนหน้า " + (trend.prior_7d_count ?? "—") + " เหตุ";
+
+    const renderRank = (id, rows) => {
+      $(id).innerHTML = (rows || []).slice(0, 5).map((row) =>
+        '<div class="history-rank-row"><span>' + escapeHtml(row.label) + '</span><strong>' + row.count + '</strong></div>'
+      ).join("") || '<div class="empty-list">ยังไม่มีข้อมูล</div>';
+    };
+    renderRank("historyTopRoads", w30.top_roads);
+    renderRank("historyTopTypes", w30.top_event_types);
+  }
+
+  function renderWindowControls() {
+    document.querySelectorAll("[data-window]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.window === activeWindow);
+    });
+    $("incidentPanelTitle").textContent = "เหตุที่ยืนยันได้ · " + displayWindowLabel();
+  }
+
+  function setWindow(windowId) {
+    if (!["now", "7d", "30d"].includes(windowId)) return;
+    activeWindow = windowId;
+    selectedRoad = "all";
+    renderWindowControls();
+    renderFilters();
+    renderIncidents();
+    renderRoadCards();
+    updateIncidentMapSource();
+    updateMapSelection();
   }
 
   function renderMetrics() {
@@ -154,7 +221,7 @@
   function incidentGeoJSON() {
     return {
       type: "FeatureCollection",
-      features: allIncidents()
+      features: windowIncidents()
         .filter((incident) => Number.isFinite(Number(incident.longitude)) && Number.isFinite(Number(incident.latitude)))
         .map((incident) => ({
           type: "Feature",
@@ -173,6 +240,23 @@
           }
         }))
     };
+  }
+
+  function updateIncidentMapSource() {
+    if (!map || !mapReady) return;
+    const source = map.getSource("confirmed-incidents");
+    if (source) source.setData(incidentGeoJSON());
+
+    if (map.getLayer("confirmed-incidents")) {
+      const color = activeWindow === "now" ? cssVar("--danger") : activeWindow === "7d" ? "#f59e0b" : "#7c6cff";
+      map.setPaintProperty("confirmed-incidents", "circle-color", color);
+      map.setPaintProperty("confirmed-incidents", "circle-opacity", activeWindow === "now" ? 0.94 : 0.72);
+      map.setPaintProperty(
+        "confirmed-incidents",
+        "circle-radius",
+        ["interpolate", ["linear"], ["zoom"], 9, activeWindow === "now" ? 5 : 4, 14, activeWindow === "now" ? 8 : 6]
+      );
+    }
   }
 
   function roadColorExpression() {
@@ -294,6 +378,7 @@
     });
 
     mapReady = true;
+    updateIncidentMapSource();
     updateMapSelection();
     fitStudyArea();
     $("mapLoading").hidden = true;
@@ -326,6 +411,9 @@
     });
 
     $("fitAreaButton").addEventListener("click", fitStudyArea);
+    document.querySelectorAll("[data-window]").forEach((button) => {
+      button.addEventListener("click", () => setWindow(button.dataset.window));
+    });
   }
 
   function filterRoadIds() {
@@ -341,7 +429,7 @@
       ...filterRoadIds().map((id) => ({
         id,
         label: roadLabel(id).replace("ถนน", ""),
-        count: roadMeta(id).confirmed_incident_count || 0
+        count: windowRoadCount(id)
       }))
     ];
     $("incidentFilters").innerHTML = chips.map((chip) =>
@@ -354,7 +442,7 @@
   }
 
   function renderIncidents() {
-    const incidents = allIncidents().filter((x) => selectedRoad === "all" || x.road_id === selectedRoad);
+    const incidents = windowIncidents().filter((x) => selectedRoad === "all" || x.road_id === selectedRoad);
     if (!incidents.length) {
       $("incidentList").innerHTML = '<div class="empty-list">ยังไม่พบเหตุที่ยืนยันได้ในตัวกรองนี้</div>';
       return;
@@ -385,7 +473,8 @@
   function renderRoadCards() {
     $("roadCards").innerHTML = cardRoadIds().map((id) => {
       const road = roadMeta(id);
-      const incidents = road.confirmed_incident_count || 0;
+      const incidentsNow = road.confirmed_incident_count || 0;
+      const incidents7d = windowRoadCount(id, "7d");
       const selected = selectedRoad === id ? " is-selected" : "";
       return '<article class="road-card' + selected + '" data-road-card="' + id
         + '" style="--road-color:' + roadColor(id) + '">'
@@ -393,12 +482,12 @@
         + "<h3>" + escapeHtml(road.display_name || id) + "</h3>"
         + '<div class="road-th">' + (road.priority ? "PRIORITY ROAD" : "EXPANDED NETWORK") + "</div>"
         + '<div class="road-card-stats">'
-        + '<div class="road-stat"><span>CONFIRMED INCIDENTS</span><strong>' + incidents + "</strong></div>"
-        + '<div class="road-stat"><span>CURRENT SPEED</span><strong>—</strong></div>'
+        + '<div class="road-stat"><span>NOW INCIDENTS</span><strong>' + incidentsNow + "</strong></div>"
+        + '<div class="road-stat"><span>LAST 7 DAYS</span><strong>' + incidents7d + "</strong></div>'
         + "</div>"
         + '<div class="road-card-note">'
-        + (incidents ? "พบ incident ที่ยืนยันกับแนวถนนแล้ว" : "ยังไม่พบ incident ที่ยืนยันได้ใน feed ปัจจุบัน")
-        + "<br>ความเร็วรายช่วงถนนยังไม่พร้อมใช้งาน"
+        + (incidentsNow ? "พบ incident ที่ยืนยันกับแนวถนนใน feed ปัจจุบัน" : "ยังไม่พบ incident ปัจจุบันที่ยืนยันได้")
+        + "<br>Segment speed ยังไม่พร้อมใช้งาน"
         + "</div></article>";
     }).join("");
     document.querySelectorAll("[data-road-card]").forEach((card) => {
@@ -412,7 +501,7 @@
     if (selectedRoad === "all") {
       map.setFilter("road-selected", ["==", ["get", "road_id"], "__none__"]);
       map.setPaintProperty("road-network", "line-opacity", 0.72);
-      map.setPaintProperty("confirmed-incidents", "circle-opacity", 0.94);
+      map.setPaintProperty("confirmed-incidents", "circle-opacity", activeWindow === "now" ? 0.94 : 0.72);
     } else {
       map.setFilter("road-selected", ["==", ["get", "road_id"], selectedRoad]);
       map.setPaintProperty(
@@ -423,7 +512,7 @@
       map.setPaintProperty(
         "confirmed-incidents",
         "circle-opacity",
-        ["case", ["==", ["get", "road_id"], selectedRoad], 0.98, 0.16]
+        ["case", ["==", ["get", "road_id"], selectedRoad], activeWindow === "now" ? 0.98 : 0.82, 0.14]
       );
       map.setPaintProperty("road-selected", "line-color", roadColor(selectedRoad));
     }
@@ -443,7 +532,7 @@
     if (statusData) renderLegend();
     if (map && mapReady && map.getLayer("road-network")) {
       map.setPaintProperty("road-network", "line-color", roadColorExpression());
-      map.setPaintProperty("confirmed-incidents", "circle-color", cssVar("--danger"));
+      updateIncidentMapSource();
       if (selectedRoad !== "all") {
         map.setPaintProperty("road-selected", "line-color", roadColor(selectedRoad));
       }
@@ -463,15 +552,19 @@
   async function load() {
     try {
       setupTheme();
-      const [statusRes, networkRes] = await Promise.all([
+      const [statusRes, networkRes, historyRes] = await Promise.all([
         fetch("data/latest_status.json", { cache: "no-store" }),
-        fetch("data/core_roads.geojson", { cache: "no-store" })
+        fetch("data/core_roads.geojson", { cache: "no-store" }),
+        fetch("data/recent_incident_intelligence.json", { cache: "no-store" })
       ]);
-      if (!statusRes.ok || !networkRes.ok) throw new Error("data artifact not available");
+      if (!statusRes.ok || !networkRes.ok || !historyRes.ok) throw new Error("data artifact not available");
       statusData = await statusRes.json();
       networkData = await networkRes.json();
+      historyData = await historyRes.json();
       renderMetrics();
+      renderHistorySummary();
       renderLegend();
+      renderWindowControls();
       renderFilters();
       renderIncidents();
       renderRoadCards();

@@ -141,6 +141,38 @@ class RoadEvidenceTests(unittest.TestCase):
         result = cluster.build_clusters(rows, 5)
         self.assertEqual(result["summary"]["confirmed_cluster_count"], 2)
 
+    def test_update_prefix_collapses_with_original(self):
+        rows = [
+            {
+                "network_confirmed": True,
+                "confirmed_road_id": "osm_x",
+                "type": "3",
+                "title": "อุบัติเหตุ ถนนนวมินทร์",
+                "latitude": "13.80",
+                "longitude": "100.64",
+                "start": "2026-09-27 08:00:00",
+                "stop": "2026-09-27 09:00:00",
+                "eid": "30",
+                "network_match_class": "GEOMETRY+TITLE_CONFIRMED",
+                "event_route_refs": [],
+            },
+            {
+                "network_confirmed": True,
+                "confirmed_road_id": "osm_x",
+                "type": "3",
+                "title": "คืบหน้าอุบัติเหตุ ถนนนวมินทร์",
+                "latitude": "13.80",
+                "longitude": "100.64",
+                "start": "2026-09-27 08:30:00",
+                "stop": "2026-09-27 09:30:00",
+                "eid": "31",
+                "network_match_class": "GEOMETRY+TITLE_CONFIRMED",
+                "event_route_refs": [],
+            },
+        ]
+        result = cluster.build_clusters(rows, 5)
+        self.assertEqual(result["summary"]["confirmed_cluster_count"], 1)
+
     def test_cluster_collapses_duplicate_records(self):
         rows = [
             {
