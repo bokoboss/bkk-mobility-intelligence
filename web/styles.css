@@ -459,3 +459,88 @@ footer {
   .map-toolbar { flex-wrap: wrap; max-width: calc(100% - 18px); }
   .map-window-switch { order: 1; }
 }
+
+
+/* Flood / rain intelligence */
+.map-window-button--flood.is-active {
+  background: #075985;
+  color: #fff;
+}
+.flood-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+}
+.flood-stat,
+.hydro-source-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 15px 16px;
+}
+.flood-stat span,
+.hydro-source-card span {
+  display: block;
+  color: var(--muted);
+  font-size: .62rem;
+  font-weight: 750;
+  letter-spacing: .09em;
+}
+.flood-stat strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.75rem;
+  letter-spacing: -.04em;
+}
+.flood-stat small,
+.hydro-source-card small {
+  display: block;
+  margin-top: 5px;
+  color: var(--subtle);
+  font-size: .68rem;
+  line-height: 1.45;
+}
+.flood-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+.flood-detail-card {
+  padding: 15px 16px;
+}
+.flood-rank-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 9px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: .69rem;
+}
+.flood-rank-row:last-child { border-bottom: 0; }
+.flood-rank-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.flood-rank-row strong { font-size: .7rem; }
+.flood-rank-row em { color: var(--subtle); font-size: .64rem; font-style: normal; }
+.hydro-source-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+.hydro-source-card strong {
+  display: block;
+  margin-top: 7px;
+  font-size: .82rem;
+}
+.hydro-source-card--pending {
+  border-style: dashed;
+}
+@media (max-width: 980px) {
+  .flood-overview { grid-template-columns: repeat(2, 1fr); }
+  .hydro-source-strip { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .flood-overview,
+  .flood-detail-grid { grid-template-columns: 1fr; }
+}

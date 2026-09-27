@@ -62,6 +62,9 @@ jobs:
       - name: Fetch iTIC/Longdo camera metadata
         run: python scripts/live/fetch_itic_cameras.py
 
+      - name: Fetch TMD NWP precipitation context
+        run: python scripts/live/fetch_tmd_precip_context.py
+
       - name: Analyze Longdo Traffic Index baseline
         run: python scripts/analysis/analyze_longdo_traffic_index.py
 
@@ -100,6 +103,9 @@ jobs:
           python scripts/history/build_recent_incident_intelligence.py \
             --events data/processed/history/recent_30d.network_matched.json
 
+      - name: Build flood/rain intelligence
+        run: python scripts/flood/build_flood_intelligence.py
+
       - name: Optional Longdo current speed sample
         if: ${{ env.LONGDO_MAP_API_KEY != '' }}
         run: |
@@ -115,7 +121,7 @@ jobs:
         run: |
           python scripts/build/build_static_site.py
           test -s dist/index.html
-          python -c 'import json; json.load(open("dist/data/latest_status.json", encoding="utf-8")); json.load(open("dist/data/core_roads.geojson", encoding="utf-8")); json.load(open("dist/data/recent_incident_intelligence.json", encoding="utf-8"))'
+          python -c 'import json; json.load(open("dist/data/latest_status.json", encoding="utf-8")); json.load(open("dist/data/core_roads.geojson", encoding="utf-8")); json.load(open("dist/data/recent_incident_intelligence.json", encoding="utf-8")); json.load(open("dist/data/flood_intelligence.json", encoding="utf-8"))'
 
       - name: Print latest summary
         if: always()
@@ -160,6 +166,7 @@ jobs:
             data/raw/history/
             data/processed/current_context/
             data/processed/history/
+            data/processed/flood/
             data/processed/now/
           if-no-files-found: warn
           retention-days: 3

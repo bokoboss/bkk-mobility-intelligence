@@ -70,13 +70,15 @@
                 <button class="map-window-button is-active" data-window="now" type="button">Now</button>
                 <button class="map-window-button" data-window="7d" type="button">7 Days</button>
                 <button class="map-window-button" data-window="30d" type="button">30 Days</button>
+                <button class="map-window-button map-window-button--flood" data-window="flood7d" type="button">Flood 7D</button>
+                <button class="map-window-button map-window-button--flood" data-window="flood30d" type="button">Flood 30D</button>
               </div>
               <button id="fitAreaButton" class="map-tool-button" type="button">Fit Area</button>
               <span class="map-provider">OpenFreeMap · OSM</span>
             </div>
           </div>
           <div class="map-caption">
-            Interactive basemap: OpenFreeMap / OpenStreetMap. เส้นสีคือ analytical road network ของ POC และจุดสีแดงคือเหตุที่ยืนยันได้ สามารถลาก ซูม และคลิกถนนหรือเหตุเพื่อดูรายละเอียด
+            Interactive basemap: OpenFreeMap / OpenStreetMap. โหมด Flood แสดงเฉพาะเหตุท่วมที่ยืนยันถนนแล้ว และวงแหวนแสดงจุดที่มีเหตุท่วมซ้ำภายในรัศมี 300 ม.
           </div>
         </article>
 
@@ -119,6 +121,60 @@
         </article>
       </section>
 
+      <section class="section-heading" id="flood-intelligence">
+        <div><div class="panel-kicker">FLOOD / RAIN INTELLIGENCE</div><h2>น้ำท่วมซ้ำ + Rain→Flood Association</h2></div>
+        <p>วิเคราะห์จาก reported episodes ที่ยืนยันถนนแล้ว; association เป็นความสัมพันธ์เชิงเวลา/พื้นที่ ไม่ใช่การพิสูจน์สาเหตุ</p>
+      </section>
+      <section class="flood-overview">
+        <article class="flood-stat">
+          <span>FLOOD · LAST 7 DAYS</span>
+          <strong id="flood7Count">—</strong>
+          <small id="flood7Trend">—</small>
+        </article>
+        <article class="flood-stat">
+          <span>FLOOD · LAST 30 DAYS</span>
+          <strong id="flood30Count">—</strong>
+          <small id="floodRoadCount">—</small>
+        </article>
+        <article class="flood-stat">
+          <span>RECURRING HOTSPOTS</span>
+          <strong id="floodHotspotCount">—</strong>
+          <small>≥ 2 flood episodes ภายใน 300 ม.</small>
+        </article>
+        <article class="flood-stat">
+          <span>RAIN→FLOOD · 7D</span>
+          <strong id="rainFloodCoverage">—</strong>
+          <small id="rainFloodLag">—</small>
+        </article>
+      </section>
+      <section class="flood-detail-grid">
+        <article class="panel flood-detail-card">
+          <div class="history-rank-title">ถนนที่พบ flood episodes สูงสุด · 30 วัน</div>
+          <div id="floodTopRoads"></div>
+        </article>
+        <article class="panel flood-detail-card">
+          <div class="history-rank-title">จุดน้ำท่วมซ้ำ · 30 วัน</div>
+          <div id="floodHotspots"></div>
+        </article>
+      </section>
+      <section class="hydro-source-strip">
+        <article class="hydro-source-card">
+          <span>TMD NWP</span>
+          <strong id="tmdHydroStatus">—</strong>
+          <small id="tmdHydroMeta">forecast metadata context</small>
+        </article>
+        <article class="hydro-source-card hydro-source-card--pending">
+          <span>BMA STREET FLOOD</span>
+          <strong>Official / not ingested</strong>
+          <small>runner ถูก reset connection — ยังไม่ scrape เพื่อหลีกเลี่ยงค่าผิด</small>
+        </article>
+        <article class="hydro-source-card hydro-source-card--pending">
+          <span>BMA RAIN GAUGES</span>
+          <strong>Official / not ingested</strong>
+          <small>รอ stable machine-readable contract</small>
+        </article>
+      </section>
+
       <section class="section-heading">
         <div><div class="panel-kicker">ROAD STATUS</div><h2>Priority roads + ถนนที่มีเหตุล่าสุด</h2></div>
         <p>แสดงถนน priority เสมอ และเพิ่มถนนใน expanded network เมื่อมี incident ที่ยืนยันได้</p>
@@ -143,7 +199,7 @@
 
     <footer>
       <div>POC — decision-support context, not an official traffic control system.</div>
-      <div>Sources: iTIC Foundation / Longdo Traffic · OpenStreetMap contributors (ODbL)</div>
+      <div>Sources: iTIC Foundation / Longdo Traffic · TMD NWP · BMA DDS source registry · OpenStreetMap contributors (ODbL)</div>
     </footer>
   </div>
   <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>

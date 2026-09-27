@@ -26,6 +26,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("data/processed/history/recent_incident_intelligence.json"),
     )
+    p.add_argument(
+        "--flood",
+        type=Path,
+        default=Path("data/processed/flood/flood_intelligence.json"),
+    )
     return p.parse_args()
 
 
@@ -102,6 +107,7 @@ def main() -> int:
         args.status,
         args.network,
         args.history,
+        args.flood,
     ]
     missing = [str(path) for path in required if not path.exists()]
     if missing:
@@ -118,6 +124,7 @@ def main() -> int:
 
     shutil.copy2(args.status, data_dir / "latest_status.json")
     shutil.copy2(args.history, data_dir / "recent_incident_intelligence.json")
+    shutil.copy2(args.flood, data_dir / "flood_intelligence.json")
 
     full_network = json.loads(args.network.read_text(encoding="utf-8"))
     web_network = render_network(full_network)
@@ -141,6 +148,7 @@ def main() -> int:
             "data/latest_status.json",
             "data/core_roads.geojson",
             "data/recent_incident_intelligence.json",
+            "data/flood_intelligence.json",
         ],
     }
     (data_dir / "build_info.json").write_text(

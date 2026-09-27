@@ -22,6 +22,7 @@
   let statusData = null;
   let networkData = null;
   let historyData = null;
+  let floodData = null;
   let selectedRoad = "all";
   let activeWindow = "now";
   let map = null;
@@ -97,6 +98,12 @@
 
   function windowIncidents(windowId = activeWindow) {
     if (windowId === "now") return allIncidents();
+    if (windowId === "flood7d" || windowId === "flood30d") {
+      const base = windowId === "flood7d" ? "7d" : "30d";
+      return [...(historyData?.windows?.[base]?.clusters || [])]
+        .filter((item) => String(item.event_type || "") === "6")
+        .sort((a, b) => String(b.latest_start || "").localeCompare(String(a.latest_start || "")));
+    }
     return [...(historyData?.windows?.[windowId]?.clusters || [])]
       .sort((a, b) => String(b.latest_start || "").localeCompare(String(a.latest_start || "")));
   }
@@ -108,6 +115,8 @@
   function displayWindowLabel() {
     if (activeWindow === "7d") return "7 วันล่าสุด";
     if (activeWindow === "30d") return "30 วันล่าสุด";
+    if (activeWindow === "flood7d") return "น้ำท่วม · 7 วันล่าสุด";
+    if (activeWindow === "flood30d") return "น้ำท่วม · 30 วันล่าสุด";
     return "ตอนนี้";
   }
 
@@ -162,15 +171,53 @@
   }
 
   function setWindow(windowId) {
-    if (!["now", "7d", "30d"].includes(windowId)) return;
+    if (!["now", "7d", "30d", "flood7d", "flood30d"].includes(windowId)) return;
     activeWindow = windowId;
     selectedRoad = "all";
     renderWindowControls();
+    renderLegend();
     renderFilters();
     renderIncidents();
     renderRoadCards();
     updateIncidentMapSource();
+    updateFloodMapSource();
     updateMapSelection();
+  }
+
+  function renderFloodSummary() {
+    if (!floodData) return;
+    const metrics = floodData.metrics || {};
+    const assoc = floodData.rain_flood_association?.["7d"] || {};
+    $("flood7Count").textContent = metrics.flood_7d ?? "—";
+    const change = metrics.flood_7d_change;
+    const pct = metrics.flood_7d_change_pct;
+    $("flood7Trend").textContent = "เทียบ 7 วันก่อน "
+      + (change == null ? "—" : (change > 0 ? "+" : "") + change)
+      + (pct == null ? "" : " · " + (pct > 0 ? "+" : "") + pct + "%");
+    $("flood30Count").textContent = metrics.flood_30d ?? "—";
+    $("floodRoadCount").textContent = "บน " + (metrics.roads_with_flood_30d ?? "—") + " ถนน";
+    $("floodHotspotCount").textContent = metrics.recurring_hotspots_30d ?? "—";
+    $("rainFloodCoverage").textContent = (assoc.association_coverage_pct ?? "—") + "%";
+    $("rainFloodLag").textContent = assoc.median_lag_minutes == null
+      ? "ยังไม่มี association"
+      : "median lag " + assoc.median_lag_minutes + " นาที · " + (assoc.associated_flood_count ?? 0) + " flood episodes";
+
+    $("floodTopRoads").innerHTML = (floodData.top_flood_roads_30d || []).slice(0, 8).map((row) =>
+      '<div class="flood-rank-row"><span>' + escapeHtml(row.road_name) + '</span><strong>'
+      + row.flood_30d + '</strong><em>' + row.distinct_flood_days_30d + ' วัน</em></div>'
+    ).join("") || '<div class="empty-list">ยังไม่มี flood episode</div>';
+
+    $("floodHotspots").innerHTML = (floodData.hotspots_30d || []).slice(0, 8).map((row) =>
+      '<div class="flood-rank-row"><span>' + escapeHtml(row.road_name || row.sample_title || "จุดท่วมซ้ำ")
+      + '</span><strong>' + row.episode_count_30d + '</strong><em>'
+      + row.distinct_flood_days_30d + ' วัน</em></div>'
+    ).join("") || '<div class="empty-list">ยังไม่พบจุดท่วมซ้ำ</div>';
+
+    const tmd = floodData.sources?.tmd_nwp || {};
+    $("tmdHydroStatus").textContent = tmd.status || "NOT FETCHED";
+    $("tmdHydroMeta").textContent = tmd.initial_time
+      ? "model cycle " + tmd.initial_time + " · metadata only"
+      : "forecast metadata context";
   }
 
   function renderMetrics() {
@@ -214,7 +261,12 @@
       + escapeHtml(roadLabel(id).replace("ถนน", "")) + "</div>"
     );
     priority.push('<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--subtle") + '"></span>ถนนหลักอื่น</div>');
-    priority.push('<div class="legend-item"><span class="legend-dot"></span>เหตุที่ยืนยันได้</div>');
+    if (activeWindow === "flood7d" || activeWindow === "flood30d") {
+      priority.push('<div class="legend-item"><span class="legend-dot" style="background:#0ea5e9"></span>Flood episode</div>');
+      priority.push('<div class="legend-item"><span class="legend-dot" style="background:transparent;border:2px solid #38bdf8"></span>Recurring flood hotspot</div>');
+    } else {
+      priority.push('<div class="legend-item"><span class="legend-dot"></span>เหตุที่ยืนยันได้</div>');
+    }
     $("mapLegend").innerHTML = priority.join("");
   }
 
@@ -248,7 +300,11 @@
     if (source) source.setData(incidentGeoJSON());
 
     if (map.getLayer("confirmed-incidents")) {
-      const color = activeWindow === "now" ? cssVar("--danger") : activeWindow === "7d" ? "#f59e0b" : "#7c6cff";
+      const color = activeWindow === "now"
+        ? cssVar("--danger")
+        : (activeWindow === "flood7d" || activeWindow === "flood30d")
+          ? "#0ea5e9"
+          : activeWindow === "7d" ? "#f59e0b" : "#7c6cff";
       map.setPaintProperty("confirmed-incidents", "circle-color", color);
       map.setPaintProperty("confirmed-incidents", "circle-opacity", activeWindow === "now" ? 0.94 : 0.72);
       map.setPaintProperty(
@@ -256,6 +312,41 @@
         "circle-radius",
         ["interpolate", ["linear"], ["zoom"], 9, activeWindow === "now" ? 5 : 4, 14, activeWindow === "now" ? 8 : 6]
       );
+    }
+  }
+
+  function floodHotspotGeoJSON() {
+    const sevenDay = activeWindow === "flood7d";
+    return {
+      type: "FeatureCollection",
+      features: (floodData?.hotspots_30d || [])
+        .filter((row) => !sevenDay || Number(row.episode_count_7d || 0) >= 2)
+        .map((row) => ({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [Number(row.longitude), Number(row.latitude)]
+          },
+          properties: {
+            hotspot_id: row.hotspot_id,
+            road_id: row.road_id,
+            road_name: row.road_name || "",
+            episode_count_30d: row.episode_count_30d || 0,
+            episode_count_7d: row.episode_count_7d || 0,
+            distinct_days: row.distinct_flood_days_30d || 0,
+            latest_flood: row.latest_flood || ""
+          }
+        }))
+    };
+  }
+
+  function updateFloodMapSource() {
+    if (!map || !mapReady) return;
+    const source = map.getSource("flood-hotspots");
+    if (source) source.setData(floodHotspotGeoJSON());
+    if (map.getLayer("flood-hotspots")) {
+      const visible = activeWindow === "flood7d" || activeWindow === "flood30d";
+      map.setLayoutProperty("flood-hotspots", "visibility", visible ? "visible" : "none");
     }
   }
 
@@ -340,12 +431,51 @@
       }
     });
 
+    map.addSource("flood-hotspots", { type: "geojson", data: floodHotspotGeoJSON() });
+    map.addLayer({
+      id: "flood-hotspots",
+      type: "circle",
+      source: "flood-hotspots",
+      layout: { visibility: "none" },
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["get", "episode_count_30d"],
+          2, 9,
+          6, 16
+        ],
+        "circle-color": "rgba(14,165,233,0.08)",
+        "circle-stroke-color": "#38bdf8",
+        "circle-stroke-width": 2.4,
+        "circle-opacity": 0.9
+      }
+    });
+
     map.on("click", (e) => {
       const features = map.queryRenderedFeatures(e.point, {
-        layers: ["confirmed-incidents", "road-network"]
+        layers: ["flood-hotspots", "confirmed-incidents", "road-network"]
       });
       const feature = features[0];
       if (!feature) return;
+
+      if (feature.layer.id === "flood-hotspots") {
+        const props = feature.properties || {};
+        const coords = feature.geometry.coordinates.slice();
+        selectedRoad = String(props.road_id || "all");
+        renderFilters();
+        renderIncidents();
+        renderRoadCards();
+        updateMapSelection();
+        new maplibregl.Popup({ closeButton: true, maxWidth: "330px" })
+          .setLngLat(coords)
+          .setHTML(
+            '<div class="map-popup-title">จุดน้ำท่วมซ้ำ</div>'
+            + '<div class="map-popup-meta">' + escapeHtml(props.road_name || "") + '</div>'
+            + '<div class="map-popup-meta">30 วัน ' + escapeHtml(props.episode_count_30d)
+            + ' episodes · ' + escapeHtml(props.distinct_days) + ' วัน</div>'
+          )
+          .addTo(map);
+        return;
+      }
 
       if (feature.layer.id === "confirmed-incidents") {
         const props = feature.properties || {};
@@ -372,13 +502,14 @@
 
     map.on("mousemove", (e) => {
       const features = map.queryRenderedFeatures(e.point, {
-        layers: ["confirmed-incidents", "road-network"]
+        layers: ["flood-hotspots", "confirmed-incidents", "road-network"]
       });
       map.getCanvas().style.cursor = features.length ? "pointer" : "";
     });
 
     mapReady = true;
     updateIncidentMapSource();
+    updateFloodMapSource();
     updateMapSelection();
     fitStudyArea();
     $("mapLoading").hidden = true;
@@ -425,7 +556,7 @@
 
   function renderFilters() {
     const chips = [
-      { id: "all", label: "ทั้งหมด", count: allIncidents().length },
+      { id: "all", label: "ทั้งหมด", count: windowIncidents().length },
       ...filterRoadIds().map((id) => ({
         id,
         label: roadLabel(id).replace("ถนน", ""),
@@ -552,17 +683,20 @@
   async function load() {
     try {
       setupTheme();
-      const [statusRes, networkRes, historyRes] = await Promise.all([
+      const [statusRes, networkRes, historyRes, floodRes] = await Promise.all([
         fetch("data/latest_status.json", { cache: "no-store" }),
         fetch("data/core_roads.geojson", { cache: "no-store" }),
-        fetch("data/recent_incident_intelligence.json", { cache: "no-store" })
+        fetch("data/recent_incident_intelligence.json", { cache: "no-store" }),
+        fetch("data/flood_intelligence.json", { cache: "no-store" })
       ]);
-      if (!statusRes.ok || !networkRes.ok || !historyRes.ok) throw new Error("data artifact not available");
+      if (!statusRes.ok || !networkRes.ok || !historyRes.ok || !floodRes.ok) throw new Error("data artifact not available");
       statusData = await statusRes.json();
       networkData = await networkRes.json();
       historyData = await historyRes.json();
+      floodData = await floodRes.json();
       renderMetrics();
       renderHistorySummary();
+      renderFloodSummary();
       renderLegend();
       renderWindowControls();
       renderFilters();
