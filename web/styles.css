@@ -237,7 +237,7 @@ main { padding: 26px 0 36px; }
 .road-card-note { color: var(--muted); font-size: .7rem; line-height: 1.5; }
 .evidence-panel { margin-top: 14px; display: grid; grid-template-columns: 1.1fr 1.2fr; gap: 24px; align-items: center; padding: 24px; }
 .evidence-copy p { color: var(--muted); font-size: .78rem; line-height: 1.65; max-width: 650px; }
-.evidence-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.evidence-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
 .evidence-item { padding: 13px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line); }
 .evidence-item span { font-size: .58rem; letter-spacing: .11em; font-weight: 800; }
 .evidence-item strong { display: block; font-size: .78rem; margin: 6px 0 3px; }
@@ -261,6 +261,7 @@ footer {
 
 @media (max-width: 1100px) {
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .evidence-grid { grid-template-columns: repeat(2, 1fr); }
   .workspace { grid-template-columns: 1fr; }
   .incident-list { max-height: 380px; }
   .road-grid { grid-template-columns: repeat(2, 1fr); }

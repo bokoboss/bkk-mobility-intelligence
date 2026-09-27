@@ -4,8 +4,8 @@
 
 Create an auditable **latest-source bundle** and analytical snapshot for all 50
 Bangkok districts. The original Ram Inthra / Prasert-Manukitch /
-Pradit Manutham / Nuan Chan roads remain focus roads, but they no longer define
-the spatial extent of the pipeline.
+Pradit Manutham / Nuan Chan roads retain stable IDs for continuity only; they
+no longer define the spatial extent or receive special Bangkok-wide priority.
 
 ## Current source stack
 
@@ -129,3 +129,45 @@ a claimed Longdo/iTIC provider quota.
 
 Observed Coverage counts only usable speed observations. Planned probes are
 never presented as measured traffic.
+
+
+## Historical Traffic Baseline v0.3
+
+Road/time baseline processing is now implemented as an offline-first pipeline.
+
+Source:
+
+- iTIC / Longdo Historical Raw Vehicle & Mobile Probe Data;
+- 2025 is the initial reference year;
+- published timestamp is GMT+7 and speed is km/h;
+- the published archive format has no heading field, so v0.3 is explicitly
+  direction-neutral.
+
+Local preprocessing:
+
+```bash
+python scripts/history/process_probe_archive.py \
+  --archive D:/data/PROBE-202501.tar.bz2
+```
+
+This streams the archive, filters to Bangkok district polygons, rejects invalid
+GPS/speed rows, map-matches to the OSM network, rejects ambiguous matches, and
+writes compact per-day `.json.gz` road/time profiles.
+
+After processing the desired months:
+
+```bash
+python scripts/history/build_historical_road_baseline.py \
+  --reference-year 2025
+```
+
+Output:
+
+`data/processed/history/road_time_baseline_v0_3.json`
+
+The baseline uses road × weekday × 30-minute bins. It first takes per-vehicle
+medians within each day/bin, then builds the historical distribution across
+daily medians so vehicles with more frequent reporting do not dominate.
+
+Normal GitHub Actions does not download the multi-GB monthly archives. CI tests
+parser, map matching and baseline aggregation with synthetic fixtures only.

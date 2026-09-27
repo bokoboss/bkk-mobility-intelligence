@@ -428,6 +428,19 @@
       ? "experimental samples · coverage " + coveragePct.toFixed(1) + "%"
       : "ยังไม่มี speed sample ที่ใช้ได้ · " + (speed.access_state || statusData.source_status.segment_speed || "provider access pending");
 
+    const historical = statusData.source_details?.historical_baseline || {};
+    const baselineReadyRoads = Number(historical.ready_road_count || 0);
+    const baselineEligibleRoads = Number(historical.eligible_road_count || roadCount);
+    const baselinePct = baselineEligibleRoads ? baselineReadyRoads / baselineEligibleRoads * 100 : 0;
+    $("baselineStatus").textContent = historical.state || "OFFLINE BUILD REQUIRED";
+    $("baselineMeta").textContent = historical.state === "READY_PARTIAL"
+      ? "ปี " + (historical.reference_year || "—") + " · ready " + baselineReadyRoads + "/" + baselineEligibleRoads
+        + " roads (" + baselinePct.toFixed(1) + "%) · direction-neutral"
+      : historical.state === "BUILT_INSUFFICIENT"
+        ? "สร้าง artifact แล้ว แต่ sample/coverage ยังไม่ผ่าน threshold · เพิ่มเดือนข้อมูลหรือทบทวน QA threshold"
+        : "pipeline พร้อมแล้ว · ต้อง preprocess archive " + (historical.reference_year || "2025")
+          + " แบบ offline ก่อน · direction-neutral";
+
     const event = statusData.source_details?.events || {};
     const age = event.latest_event_age_hours;
     $("latestEventAge").textContent = age == null ? "LIVE" : Math.round(age * 60) + " นาที";

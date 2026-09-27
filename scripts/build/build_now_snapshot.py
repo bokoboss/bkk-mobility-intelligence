@@ -18,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--speed", type=Path, default=Path("data/processed/current_speed/longdo_speed.json"))
     p.add_argument("--traffic-state", type=Path, default=Path("data/processed/current_speed/traffic_state.json"))
     p.add_argument("--traffic-coverage", type=Path, default=Path("data/processed/current_speed/traffic_coverage.json"))
+    p.add_argument("--historical-baseline", type=Path, default=Path("data/processed/history/road_time_baseline_v0_3.json"))
     p.add_argument("--config", type=Path, default=Path("config/study_area.json"))
     p.add_argument("--network", type=Path, default=Path("data/processed/osm/core_roads.geojson"))
     p.add_argument("--output", type=Path, default=Path("data/processed/now/latest_status.json"))
@@ -60,6 +61,14 @@ def main() -> int:
     config = load(args.config)
     network = load(args.network)
     traffic_coverage = load(args.traffic_coverage) if args.traffic_coverage.exists() else None
+    historical_baseline = load(args.historical_baseline) if args.historical_baseline.exists() else None
+    historical_summary = (historical_baseline or {}).get("summary") or {}
+    if historical_baseline is None:
+        historical_state = "OFFLINE_BUILD_REQUIRED"
+    elif int(historical_summary.get("ready_road_count", 0)) > 0:
+        historical_state = "READY_PARTIAL"
+    else:
+        historical_state = "BUILT_INSUFFICIENT"
 
     roads = network_roads(network)
     for road in config.get("roads", []):
@@ -170,7 +179,7 @@ def main() -> int:
     )
 
     result = {
-        "schema": "bkk-mobility-now-v0.4",
+        "schema": "bkk-mobility-now-v0.5",
         "study_area_id": manifest.get("study_area_id"),
         "study_area_name": config.get("name"),
         "study_area_bbox_wgs84": config.get("bbox_wgs84"),
@@ -214,6 +223,21 @@ def main() -> int:
                 "planned_road_coverage_ratio": coverage_summary.get("planned_road_coverage_ratio", 0.0),
                 "observed_road_coverage_ratio": coverage_summary.get("observed_road_coverage_ratio", 0.0),
             },
+            "historical_baseline": {
+                "schema": (historical_baseline or {}).get("schema"),
+                "state": historical_state,
+                "reference_year": (historical_baseline or {}).get("reference_year")
+                    or (config.get("historical_baseline") or {}).get("reference_year"),
+                "direction_state": (historical_baseline or {}).get("direction_state")
+                    or (config.get("historical_baseline") or {}).get("direction_state"),
+                "profile_day_count": historical_summary.get("profile_day_count", 0),
+                "ready_road_count": historical_summary.get("ready_road_count", 0),
+                "eligible_road_count": historical_summary.get("eligible_road_count", len(roads)),
+                "ready_road_coverage_ratio": historical_summary.get("ready_road_coverage_ratio", 0.0),
+                "ready_bin_count": historical_summary.get("ready_bin_count", 0),
+                "source_date_min": historical_summary.get("source_date_min"),
+                "source_date_max": historical_summary.get("source_date_max"),
+            },
         },
         "city_context": {
             "traffic_index": ti["data"],
@@ -256,12 +280,15 @@ def main() -> int:
                 "EXPERIMENTAL_PARTIAL" if sampled_road_count else "BLOCKED_ON_PROVIDER_ACCESS"
             ),
             "traffic_coverage": "READY" if traffic_coverage is not None else "MISSING",
+            "historical_road_time_baseline": historical_state,
             "current_vs_baseline_segment": (
-                "BLOCKED_ON_ROAD_TIME_BASELINE"
+                "READY_FOR_V0_4_JOIN"
+                if sampled_road_count and historical_state == "READY_PARTIAL"
+                else "BLOCKED_ON_ROAD_TIME_BASELINE"
                 if sampled_road_count
                 else "BLOCKED_ON_SEGMENT_SPEED"
             ),
-            "now_dashboard": "READY_FOR_BANGKOK_WIDE_TRAFFIC_COVERAGE_V0_2",
+            "now_dashboard": "READY_FOR_HISTORICAL_BASELINE_V0_3_PIPELINE",
         },
     }
 

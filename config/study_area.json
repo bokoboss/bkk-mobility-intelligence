@@ -44,6 +44,22 @@
     "rotation_policy": "UTC-day deterministic rotation",
     "budget_note": "Internal project-side request cap; not a provider quota."
   },
+  "historical_baseline": {
+    "reference_year": 2025,
+    "source": "iTIC / Longdo Historical Raw Vehicle & Mobile Probe Data",
+    "archive_index_url": "https://traffic.longdo.com/data/probe-data/",
+    "format_url": "https://traffic.longdo.com/docs/probedata-format",
+    "processing_mode": "OFFLINE_INCREMENTAL",
+    "time_bin_minutes": 30,
+    "max_map_match_distance_m": 45,
+    "ambiguity_margin_m": 10,
+    "max_speed_kmh": 160,
+    "min_days_per_weekday_bin": 8,
+    "min_total_vehicles_per_bin": 40,
+    "min_ready_bins_per_road": 24,
+    "direction_state": "NOT_AVAILABLE_IN_PUBLISHED_RAW_FORMAT",
+    "threshold_note": "Project QA thresholds; not iTIC standards."
+  },
   "roads": [
     {
       "id": "ram_inthra",
@@ -119,6 +135,8 @@
     "Urban network: named tertiary roads with sufficient in-Bangkok length.",
     "The four original pilot roads retain stable IDs for continuity only; they receive no special Bangkok-wide visual or sampling priority.",
     "Traffic sampling uses a configurable internal request budget and rotating district-aware plan; it is not a provider quota.",
+    "Historical road/time baseline processing is offline-first because monthly raw probe archives are large; CI only validates the processor with synthetic tests.",
+    "Published raw probe format has no heading field, so Historical Baseline v0.3 is direction-neutral.",
     "BMA official district geometry remains the intended authoritative replacement when automated access is stable."
   ]
 }
