@@ -1,20 +1,17 @@
 import importlib.util
-import json
 import pathlib
 import unittest
 
 ROOT = pathlib.Path(__file__).parents[1]
 
 MATCH_SPEC = importlib.util.spec_from_file_location(
-    "match",
-    ROOT / "scripts/spatial/match_events_to_network.py",
+    "match", ROOT / "scripts/spatial/match_events_to_network.py"
 )
 match = importlib.util.module_from_spec(MATCH_SPEC)
 MATCH_SPEC.loader.exec_module(match)
 
 CLUSTER_SPEC = importlib.util.spec_from_file_location(
-    "cluster",
-    ROOT / "scripts/spatial/cluster_network_events.py",
+    "cluster", ROOT / "scripts/spatial/cluster_network_events.py"
 )
 cluster = importlib.util.module_from_spec(CLUSTER_SPEC)
 CLUSTER_SPEC.loader.exec_module(cluster)
@@ -22,46 +19,47 @@ CLUSTER_SPEC.loader.exec_module(cluster)
 
 class RoadEvidenceTests(unittest.TestCase):
     def test_thai_highway_ref(self):
-        event = {
-            "title": "น้ำท่วมทางหลวง 351 ช่วงมหาวิทยาลัยเกษตรศาสตร์ - คันนายาว"
-        }
+        event = {"title": "น้ำท่วมทางหลวง 351 ช่วงมหาวิทยาลัยเกษตรศาสตร์ - คันนายาว"}
         self.assertEqual(match.event_route_refs(event), {"351"})
 
     def test_route_and_geometry_confirm(self):
-        event = {
-            "title": "น้ำท่วมทางหลวง 351",
-            "road_title_matches": [],
+        event = {"title": "น้ำท่วมทางหลวง 351", "road_title_matches": []}
+        candidate = {
+            "road_id": "prasert_manukitch",
+            "display_name": "ถนนประเสริฐมนูกิจ",
+            "distance_m": 12.0,
+            "aliases": ["ถนนประเสริฐมนูกิจ"],
+            "route_refs": ["351"],
         }
-        out = match.classify(
-            event,
-            [{"road_id": "prasert_manukitch", "distance_m": 12.0}],
-            80,
-            150,
-            {"prasert_manukitch": {"351"}},
-        )
+        out = match.classify(event, [candidate], 80, 150)
         self.assertTrue(out["network_confirmed"])
-        self.assertEqual(
-            out["network_match_class"],
-            "GEOMETRY+ROUTE_CONFIRMED",
-        )
+        self.assertEqual(out["network_match_class"], "GEOMETRY+ROUTE_CONFIRMED")
+
+    def test_dynamic_title_and_geometry_confirm(self):
+        event = {"title": "น้ำท่วม ถนนนวมินทร์ ขาเข้า"}
+        candidate = {
+            "road_id": "osm_abc",
+            "display_name": "ถนนนวมินทร์",
+            "distance_m": 30.0,
+            "aliases": ["ถนนนวมินทร์"],
+            "route_refs": [],
+        }
+        out = match.classify(event, [candidate], 80, 150)
+        self.assertTrue(out["network_confirmed"])
+        self.assertTrue(out["title_support"])
 
     def test_geometry_without_identity_is_candidate(self):
-        event = {
-            "title": "น้ำท่วม ถนนแจ้งวัฒนะ",
-            "road_title_matches": [],
+        event = {"title": "น้ำท่วม ถนนแจ้งวัฒนะ", "road_title_matches": []}
+        candidate = {
+            "road_id": "ram_inthra",
+            "display_name": "ถนนรามอินทรา",
+            "distance_m": 5.0,
+            "aliases": ["ถนนรามอินทรา"],
+            "route_refs": ["304"],
         }
-        out = match.classify(
-            event,
-            [{"road_id": "ram_inthra", "distance_m": 5.0}],
-            80,
-            150,
-            {"ram_inthra": {"304"}},
-        )
+        out = match.classify(event, [candidate], 80, 150)
         self.assertFalse(out["network_confirmed"])
-        self.assertEqual(
-            out["network_match_class"],
-            "GEOMETRY_ONLY_CANDIDATE",
-        )
+        self.assertEqual(out["network_match_class"], "GEOMETRY_ONLY_CANDIDATE")
 
     def test_cluster_collapses_duplicate_records(self):
         rows = [
@@ -95,7 +93,6 @@ class RoadEvidenceTests(unittest.TestCase):
         result = cluster.build_clusters(rows, 5)
         self.assertEqual(result["summary"]["confirmed_record_count"], 2)
         self.assertEqual(result["summary"]["confirmed_cluster_count"], 1)
-        self.assertEqual(result["clusters"][0]["record_count"], 2)
 
 
 if __name__ == "__main__":

@@ -1,31 +1,11 @@
 (() => {
   "use strict";
 
-  const ROAD_META = {
-    ram_inthra: {
-      en: "Ram Inthra Road",
-      th: "ถนนรามอินทรา",
-      colorVar: "--road-ram_inthra",
-      labelOffset: [0, -16]
-    },
-    prasert_manukitch: {
-      en: "Prasert-Manukitch Road",
-      th: "ถนนประเสริฐมนูกิจ",
-      colorVar: "--road-prasert_manukitch",
-      labelOffset: [-58, 22]
-    },
-    pradit_manutham: {
-      en: "Pradit Manutham Road",
-      th: "ถนนประดิษฐ์มนูธรรม",
-      colorVar: "--road-pradit_manutham",
-      labelOffset: [48, 36]
-    },
-    nuan_chan: {
-      en: "Nuan Chan Road",
-      th: "ถนนนวลจันทร์",
-      colorVar: "--road-nuan_chan",
-      labelOffset: [55, -12]
-    }
+  const PRIORITY_COLORS = {
+    ram_inthra: "#4cc9f0",
+    prasert_manukitch: "#65d49a",
+    pradit_manutham: "#f0b55a",
+    nuan_chan: "#b89cff"
   };
 
   const CLASS_LABELS = {
@@ -45,29 +25,31 @@
   const $ = (id) => document.getElementById(id);
 
   function safeStorageGet(key) {
-    try {
-      return window.localStorage ? window.localStorage.getItem(key) : null;
-    } catch (error) {
-      console.warn("localStorage read unavailable", error);
-      return null;
-    }
+    try { return window.localStorage ? window.localStorage.getItem(key) : null; }
+    catch (_) { return null; }
   }
 
   function safeStorageSet(key, value) {
-    try {
-      if (window.localStorage) window.localStorage.setItem(key, value);
-    } catch (error) {
-      console.warn("localStorage write unavailable", error);
-    }
+    try { if (window.localStorage) window.localStorage.setItem(key, value); }
+    catch (_) {}
   }
 
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
+  function roadMeta(id) {
+    return statusData?.roads?.[id] || { display_name: id, priority: false, confirmed_incident_count: 0 };
+  }
+
+  function roadLabel(id) {
+    return roadMeta(id).display_name || id;
+  }
+
   function roadColor(id) {
-    const meta = ROAD_META[id];
-    return meta ? cssVar(meta.colorVar) : cssVar("--muted");
+    if (PRIORITY_COLORS[id]) return PRIORITY_COLORS[id];
+    if ((roadMeta(id).confirmed_incident_count || 0) > 0) return cssVar("--accent-2");
+    return cssVar("--subtle");
   }
 
   function escapeHtml(value) {
@@ -99,10 +81,6 @@
     return formatThaiDate(iso);
   }
 
-  function roadLabel(id) {
-    return ROAD_META[id]?.th || id;
-  }
-
   function allIncidents() {
     if (!statusData) return [];
     const incidents = [];
@@ -110,6 +88,19 @@
       (road.confirmed_incidents || []).forEach((item) => incidents.push({ ...item, road_id: roadId }));
     });
     return incidents.sort((a, b) => String(b.latest_start || "").localeCompare(String(a.latest_start || "")));
+  }
+
+  function priorityRoadIds() {
+    return Object.entries(statusData?.roads || {})
+      .filter(([, road]) => road.priority)
+      .map(([id]) => id);
+  }
+
+  function incidentRoadIds() {
+    return Object.entries(statusData?.roads || {})
+      .filter(([, road]) => (road.confirmed_incident_count || 0) > 0)
+      .sort((a, b) => (b[1].confirmed_incident_count || 0) - (a[1].confirmed_incident_count || 0))
+      .map(([id]) => id);
   }
 
   function renderMetrics() {
@@ -122,12 +113,10 @@
       + " · P" + Number(base.current_percentile_rank).toFixed(0)
       + " · n=" + base.sample_count;
 
-    const total = statusData.network_incidents.distinct_confirmed_incidents;
-    $("incidentCount").textContent = total;
-    const breakdown = Object.entries(statusData.network_incidents.clusters_by_road || {})
-      .map(([id, count]) => roadLabel(id) + " " + count)
-      .join(" · ");
-    $("incidentBreakdown").textContent = breakdown || "ยังไม่พบเหตุที่ยืนยันได้";
+    $("incidentCount").textContent = statusData.network_incidents.distinct_confirmed_incidents;
+    const activeRoads = statusData.network_summary?.roads_with_confirmed_incidents || 0;
+    const roadCount = statusData.network_summary?.road_count || Object.keys(statusData.roads || {}).length;
+    $("incidentBreakdown").textContent = "ครอบคลุม " + roadCount + " ถนนหลัก · มีเหตุบน " + activeRoads + " ถนน";
 
     const speedReady = statusData.source_status.segment_speed !== "UNAVAILABLE";
     $("speedValue").textContent = speedReady ? "ทดลอง" : "N/A";
@@ -150,10 +139,12 @@
   }
 
   function renderLegend() {
-    $("mapLegend").innerHTML = Object.entries(ROAD_META).map(([id, meta]) =>
+    const priority = priorityRoadIds().map((id) =>
       '<div class="legend-item"><span class="legend-line" style="background:' + roadColor(id) + '"></span>'
-      + escapeHtml(meta.th.replace("ถนน", "")) + "</div>"
-    ).join("");
+      + escapeHtml(roadLabel(id).replace("ถนน", "")) + "</div>"
+    );
+    priority.push('<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--subtle") + '"></span>ถนนหลักอื่น</div>');
+    $("mapLegend").innerHTML = priority.join("");
   }
 
   function computeProjection() {
@@ -166,7 +157,7 @@
     const lats = coords.map((p) => Number(p[1]));
     const minLon = Math.min(...lons), maxLon = Math.max(...lons);
     const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-    const W = 1000, H = 620, P = 48;
+    const W = 1000, H = 620, P = 36;
     return (lon, lat) => {
       const x = P + ((lon - minLon) / Math.max(maxLon - minLon, 1e-8)) * (W - 2 * P);
       const y = H - P - ((lat - minLat) / Math.max(maxLat - minLat, 1e-8)) * (H - 2 * P);
@@ -197,38 +188,40 @@
     const roadGroup = svgEl("g", { class: "roads-layer" });
     const pointGroup = svgEl("g", { class: "incidents-layer" });
     const labelGroup = svgEl("g", { class: "labels-layer" });
+    const priorityBuckets = {};
 
-    const roadPointBuckets = {};
     (networkData.features || []).forEach((feature) => {
       const roadId = feature.properties?.road_id;
       const coords = feature.geometry?.coordinates || [];
-      if (!roadId || coords.length < 2 || !ROAD_META[roadId]) return;
+      if (!roadId || coords.length < 2) return;
+      const meta = roadMeta(roadId);
       const path = svgEl("path", {
         d: pathFromCoords(coords),
-        class: "network-road",
+        class: "network-road" + (meta.priority ? " is-priority" : ""),
         "data-road": roadId,
         stroke: roadColor(roadId)
       });
       path.addEventListener("click", () => selectRoad(roadId));
       roadGroup.appendChild(path);
-      roadPointBuckets[roadId] ||= [];
-      roadPointBuckets[roadId].push(...coords);
+      if (meta.priority) {
+        priorityBuckets[roadId] ||= [];
+        priorityBuckets[roadId].push(...coords);
+      }
     });
 
-    Object.entries(roadPointBuckets).forEach(([roadId, coords]) => {
+    Object.entries(priorityBuckets).forEach(([roadId, coords]) => {
       if (!coords.length) return;
       const avgLon = coords.reduce((s, p) => s + Number(p[0]), 0) / coords.length;
       const avgLat = coords.reduce((s, p) => s + Number(p[1]), 0) / coords.length;
       const [x, y] = mapProjection(avgLon, avgLat);
-      const [dx, dy] = ROAD_META[roadId].labelOffset || [0, 0];
       const label = svgEl("text", {
-        x: (x + dx).toFixed(1),
-        y: (y + dy).toFixed(1),
+        x: x.toFixed(1),
+        y: y.toFixed(1),
         class: "road-label",
         "text-anchor": "middle",
         "data-road-label": roadId
       });
-      label.textContent = ROAD_META[roadId].th.replace("ถนน", "");
+      label.textContent = roadLabel(roadId).replace("ถนน", "");
       labelGroup.appendChild(label);
     });
 
@@ -242,8 +235,8 @@
         "data-road": incident.road_id,
         transform: "translate(" + x.toFixed(1) + " " + y.toFixed(1) + ")"
       });
-      g.appendChild(svgEl("circle", { r: 12, class: "incident-halo" }));
-      g.appendChild(svgEl("circle", { r: 5.5, class: "incident-core" }));
+      g.appendChild(svgEl("circle", { r: 11, class: "incident-halo" }));
+      g.appendChild(svgEl("circle", { r: 5, class: "incident-core" }));
       g.addEventListener("mouseenter", (ev) => showTooltip(ev, incident));
       g.addEventListener("mouseleave", hideTooltip);
       g.addEventListener("click", () => selectRoad(incident.road_id));
@@ -265,18 +258,21 @@
     tip.hidden = false;
   }
 
-  function hideTooltip() {
-    $("mapTooltip").hidden = true;
+  function hideTooltip() { $("mapTooltip").hidden = true; }
+
+  function filterRoadIds() {
+    const ids = [...priorityRoadIds()];
+    incidentRoadIds().forEach((id) => { if (!ids.includes(id)) ids.push(id); });
+    return ids;
   }
 
   function renderFilters() {
-    const total = allIncidents().length;
     const chips = [
-      { id: "all", label: "ทั้งหมด", count: total },
-      ...Object.keys(ROAD_META).map((id) => ({
+      { id: "all", label: "ทั้งหมด", count: allIncidents().length },
+      ...filterRoadIds().map((id) => ({
         id,
-        label: ROAD_META[id].th.replace("ถนน", ""),
-        count: statusData.roads?.[id]?.confirmed_incident_count || 0
+        label: roadLabel(id).replace("ถนน", ""),
+        count: roadMeta(id).confirmed_incident_count || 0
       }))
     ];
     $("incidentFilters").innerHTML = chips.map((chip) =>
@@ -309,16 +305,22 @@
     }).join("");
   }
 
+  function cardRoadIds() {
+    const priority = priorityRoadIds();
+    const active = incidentRoadIds().filter((id) => !priority.includes(id));
+    return [...priority, ...active.slice(0, 8)];
+  }
+
   function renderRoadCards() {
-    $("roadCards").innerHTML = Object.entries(ROAD_META).map(([id, meta]) => {
-      const road = statusData.roads?.[id] || {};
+    $("roadCards").innerHTML = cardRoadIds().map((id) => {
+      const road = roadMeta(id);
       const incidents = road.confirmed_incident_count || 0;
       const selected = selectedRoad === id ? " is-selected" : "";
       return '<article class="road-card' + selected + '" data-road-card="' + id
         + '" style="--road-color:' + roadColor(id) + '">'
         + '<div class="road-card-line"></div>'
-        + "<h3>" + escapeHtml(meta.en) + "</h3>"
-        + '<div class="road-th">' + escapeHtml(meta.th) + "</div>"
+        + "<h3>" + escapeHtml(road.display_name || id) + "</h3>"
+        + '<div class="road-th">' + (road.priority ? "PRIORITY ROAD" : "EXPANDED NETWORK") + "</div>"
         + '<div class="road-card-stats">'
         + '<div class="road-stat"><span>CONFIRMED INCIDENTS</span><strong>' + incidents + "</strong></div>"
         + '<div class="road-stat"><span>CURRENT SPEED</span><strong>—</strong></div>'

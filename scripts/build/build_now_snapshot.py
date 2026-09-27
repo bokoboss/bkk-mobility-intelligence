@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a frontend-neutral latest-status contract from validated Phase 0 data."""
+"""Build the latest frontend-neutral status contract for the expanded network."""
 
 from __future__ import annotations
 
@@ -12,41 +12,34 @@ from typing import Any
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--latest-pointer", type=Path, default=Path("data/raw/current/latest.json"))
-    p.add_argument(
-        "--traffic-index",
-        type=Path,
-        default=Path("data/raw/current_context/traffic_index.json"),
-    )
-    p.add_argument(
-        "--traffic-index-baseline",
-        type=Path,
-        default=Path("data/processed/current_context/traffic_index_baseline.json"),
-    )
-    p.add_argument(
-        "--cameras",
-        type=Path,
-        default=Path("data/raw/current_context/cameras.study_area.json"),
-    )
-    p.add_argument(
-        "--speed",
-        type=Path,
-        default=Path("data/processed/current_speed/longdo_speed.json"),
-    )
-    p.add_argument(
-        "--config",
-        type=Path,
-        default=Path("config/study_area.json"),
-    )
-    p.add_argument(
-        "--output",
-        type=Path,
-        default=Path("data/processed/now/latest_status.json"),
-    )
+    p.add_argument("--traffic-index", type=Path, default=Path("data/raw/current_context/traffic_index.json"))
+    p.add_argument("--traffic-index-baseline", type=Path, default=Path("data/processed/current_context/traffic_index_baseline.json"))
+    p.add_argument("--cameras", type=Path, default=Path("data/raw/current_context/cameras.study_area.json"))
+    p.add_argument("--speed", type=Path, default=Path("data/processed/current_speed/longdo_speed.json"))
+    p.add_argument("--config", type=Path, default=Path("config/study_area.json"))
+    p.add_argument("--network", type=Path, default=Path("data/processed/osm/core_roads.geojson"))
+    p.add_argument("--output", type=Path, default=Path("data/processed/now/latest_status.json"))
     return p.parse_args()
 
 
 def load(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def network_roads(network: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    catalog = (network.get("properties") or {}).get("road_catalog") or []
+    return {
+        item["road_id"]: {
+            "display_name": item.get("display_name") or item["road_id"],
+            "priority": bool(item.get("priority")),
+            "aliases": item.get("aliases") or [],
+            "route_refs": item.get("route_refs") or [],
+            "highway_classes": item.get("highway_classes") or [],
+            "total_length_m": item.get("total_length_m"),
+            "confirmed_incidents": [],
+        }
+        for item in catalog
+    }
 
 
 def main() -> int:
@@ -60,48 +53,67 @@ def main() -> int:
     ti_baseline = load(args.traffic_index_baseline)
     cameras = load(args.cameras)
     config = load(args.config)
+    network = load(args.network)
 
-    roads = {
-        road["id"]: {
-            "display_name": road.get("display_name"),
-            "aliases": road.get("aliases", []),
-            "confirmed_incidents": [],
-        }
-        for road in config.get("roads", [])
-    }
+    roads = network_roads(network)
+    for road in config.get("roads", []):
+        roads.setdefault(
+            road["id"],
+            {
+                "display_name": road.get("display_name") or road["id"],
+                "priority": True,
+                "aliases": road.get("aliases") or [],
+                "route_refs": road.get("route_refs") or [],
+                "highway_classes": [],
+                "total_length_m": None,
+                "confirmed_incidents": [],
+            },
+        )
+
     for cluster in clusters_doc.get("clusters", []):
         rid = cluster.get("road_id")
-        if rid in roads:
-            roads[rid]["confirmed_incidents"].append(cluster)
+        if rid not in roads:
+            roads[rid] = {
+                "display_name": cluster.get("road_name") or rid,
+                "priority": False,
+                "aliases": [],
+                "route_refs": cluster.get("event_route_refs") or [],
+                "highway_classes": [],
+                "total_length_m": None,
+                "confirmed_incidents": [],
+            }
+        roads[rid]["confirmed_incidents"].append(cluster)
 
-    speed = None
-    if args.speed.exists():
-        speed = load(args.speed)
-
-    for rid, road in roads.items():
+    speed = load(args.speed) if args.speed.exists() else None
+    for road in roads.values():
         road["confirmed_incident_count"] = len(road["confirmed_incidents"])
         road["speed_status"] = (
             "AVAILABLE_EXPERIMENTAL" if speed is not None else "UNAVAILABLE"
         )
         road["data_statement"] = (
-            "No confirmed incident in current feed"
-            if road["confirmed_incident_count"] == 0
-            else "Confirmed incident activity present"
+            "Confirmed incident activity present"
+            if road["confirmed_incident_count"]
+            else "No confirmed incident in current feed"
         )
         road["data_statement_caveat"] = (
             "No confirmed incident does not prove the road is disruption-free; "
             "the event feed is not assumed to be a complete census."
         )
 
+    priority_count = sum(1 for road in roads.values() if road.get("priority"))
+    active_roads = sum(
+        1 for road in roads.values() if road.get("confirmed_incident_count", 0) > 0
+    )
+
     result = {
-        "schema": "bkk-mobility-now-v0.1",
+        "schema": "bkk-mobility-now-v0.2",
         "study_area_id": manifest.get("study_area_id"),
+        "study_area_name": config.get("name"),
+        "study_area_bbox_wgs84": config.get("bbox_wgs84"),
         "generated_from_run": manifest.get("run_id"),
         "source_status": {
             "events": manifest["sources"]["events"]["freshness_class"],
-            "anonymous_traffic_free": manifest["sources"]["traffic_free"][
-                "freshness_class"
-            ],
+            "anonymous_traffic_free": manifest["sources"]["traffic_free"]["freshness_class"],
             "segment_speed": (
                 "AVAILABLE_EXPERIMENTAL" if speed is not None else "UNAVAILABLE"
             ),
@@ -109,40 +121,30 @@ def main() -> int:
         "source_details": {
             "events": {
                 "provider": manifest["sources"]["events"].get("provider"),
-                "retrieved_at_utc": manifest["sources"]["events"].get(
-                    "retrieved_at_utc"
-                ),
-                "latest_event_start": (
-                    (manifest["sources"]["events"].get("audit") or {}).get(
-                        "latest_event_start"
-                    )
-                ),
-                "latest_event_age_hours": (
-                    (manifest["sources"]["events"].get("audit") or {}).get(
-                        "latest_event_start_age_hours_at_retrieval"
-                    )
-                ),
+                "retrieved_at_utc": manifest["sources"]["events"].get("retrieved_at_utc"),
+                "latest_event_start": (manifest["sources"]["events"].get("audit") or {}).get("latest_event_start"),
+                "latest_event_age_hours": (manifest["sources"]["events"].get("audit") or {}).get("latest_event_start_age_hours_at_retrieval"),
             },
             "traffic_index": {
                 "provider": ti.get("provider"),
                 "source_time_utc": ti["data"].get("source_time_utc"),
                 "retrieved_at_utc": ti["data"].get("retrieved_at_utc"),
-                "age_minutes_at_retrieval": ti["data"].get(
-                    "age_minutes_at_retrieval"
-                ),
+                "age_minutes_at_retrieval": ti["data"].get("age_minutes_at_retrieval"),
             },
         },
         "city_context": {
             "traffic_index": ti["data"],
             "traffic_index_baseline": ti_baseline,
         },
+        "network_summary": {
+            "road_count": len(roads),
+            "priority_road_count": priority_count,
+            "dynamic_road_count": len(roads) - priority_count,
+            "roads_with_confirmed_incidents": active_roads,
+        },
         "network_incidents": {
-            "confirmed_record_count": clusters_doc["summary"][
-                "confirmed_record_count"
-            ],
-            "distinct_confirmed_incidents": clusters_doc["summary"][
-                "confirmed_cluster_count"
-            ],
+            "confirmed_record_count": clusters_doc["summary"]["confirmed_record_count"],
+            "distinct_confirmed_incidents": clusters_doc["summary"]["confirmed_cluster_count"],
             "clusters_by_road": clusters_doc["summary"]["clusters_by_road"],
         },
         "camera_context": {
@@ -160,7 +162,7 @@ def main() -> int:
                 "EXPERIMENTAL" if speed is not None else "BLOCKED_ON_PROVIDER_ACCESS"
             ),
             "current_vs_baseline_segment": "BLOCKED_ON_SEGMENT_SPEED",
-            "now_dashboard": "READY_FOR_INCIDENT_AND_CONTEXT_POC",
+            "now_dashboard": "READY_FOR_EXPANDED_INCIDENT_AND_CONTEXT_POC",
         },
     }
 
@@ -173,14 +175,12 @@ def main() -> int:
         json.dumps(
             {
                 "output": str(args.output),
+                "study_area": result["study_area_name"],
+                "network_summary": result["network_summary"],
                 "readiness": result["readiness"],
-                "distinct_confirmed_incidents": result["network_incidents"][
-                    "distinct_confirmed_incidents"
-                ],
+                "distinct_confirmed_incidents": result["network_incidents"]["distinct_confirmed_incidents"],
                 "traffic_index": result["city_context"]["traffic_index"]["index"],
-                "traffic_index_class": result["city_context"][
-                    "traffic_index_baseline"
-                ]["baseline"]["classification"],
+                "traffic_index_class": result["city_context"]["traffic_index_baseline"]["baseline"]["classification"],
             },
             ensure_ascii=False,
             indent=2,

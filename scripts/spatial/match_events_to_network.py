@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Match iTIC events to OSM core roads using geometry plus identity evidence."""
+"""Match iTIC events to the expanded OSM road catalog.
+
+Confirmation requires spatial proximity plus road identity evidence from either
+an OSM/config road name appearing in the event title or a route reference.
+"""
 
 from __future__ import annotations
 
@@ -43,10 +47,7 @@ def xy_m(
 
 
 def point_segment_distance_m(
-    lon: float,
-    lat: float,
-    a: list[float],
-    b: list[float],
+    lon: float, lat: float, a: list[float], b: list[float]
 ) -> float:
     ax, ay = xy_m(float(a[0]), float(a[1]), lon, lat)
     bx, by = xy_m(float(b[0]), float(b[1]), lon, lat)
@@ -55,10 +56,7 @@ def point_segment_distance_m(
         return math.hypot(ax, ay)
     t = max(
         0.0,
-        min(
-            1.0,
-            -(ax * vx + ay * vy) / (vx * vx + vy * vy),
-        ),
+        min(1.0, -(ax * vx + ay * vy) / (vx * vx + vy * vy)),
     )
     px, py = ax + t * vx, ay + t * vy
     return math.hypot(px, py)
@@ -73,34 +71,19 @@ def point_line_distance_m(
     )
 
 
-def nearest_by_road(
-    event: dict[str, Any], network: dict[str, Any]
-) -> list[dict[str, Any]]:
-    lat = float(event["latitude"])
-    lon = float(event["longitude"])
-    best: dict[str, dict[str, Any]] = {}
+def clean_alias(value: str) -> str:
+    text = re.sub(r"\s+", " ", value.strip().casefold())
+    for prefix in ("ถนน", "road "):
+        if text.startswith(prefix):
+            text = text[len(prefix):].strip()
+    return text
 
-    for feature in network.get("features", []):
-        props = feature.get("properties") or {}
-        rid = props.get("road_id")
-        coords = (feature.get("geometry") or {}).get("coordinates") or []
-        if not rid or len(coords) < 2:
-            continue
 
-        distance = point_line_distance_m(lon, lat, coords)
-        if rid not in best or distance < best[rid]["distance_m"]:
-            best[rid] = {
-                "road_id": rid,
-                "distance_m": round(distance, 1),
-                "osm_way_id": props.get("osm_way_id"),
-                "osm_name": (
-                    props.get("name")
-                    or props.get("name_th")
-                    or props.get("name_en")
-                ),
-            }
-
-    return sorted(best.values(), key=lambda x: x["distance_m"])
+def event_title(event: dict[str, Any]) -> str:
+    return " ".join(
+        str(event.get(k) or "")
+        for k in ("title", "title_en")
+    ).casefold()
 
 
 def event_text(event: dict[str, Any]) -> str:
@@ -117,11 +100,59 @@ def event_route_refs(event: dict[str, Any]) -> set[str]:
     return refs
 
 
-def route_refs_by_road(config: dict[str, Any]) -> dict[str, set[str]]:
-    return {
-        road["id"]: {str(ref) for ref in road.get("route_refs", [])}
-        for road in config.get("roads", [])
-    }
+def candidate_title_support(
+    event: dict[str, Any], candidate: dict[str, Any]
+) -> bool:
+    title = event_title(event)
+    configured = set(event.get("road_title_matches") or [])
+    if candidate["road_id"] in configured:
+        return True
+
+    aliases = candidate.get("aliases") or []
+    for alias in aliases:
+        cleaned = clean_alias(str(alias))
+        if len(cleaned) >= 4 and cleaned in title:
+            return True
+    return False
+
+
+def nearest_by_road(
+    event: dict[str, Any], network: dict[str, Any]
+) -> list[dict[str, Any]]:
+    lat = float(event["latitude"])
+    lon = float(event["longitude"])
+    best: dict[str, dict[str, Any]] = {}
+
+    for feature in network.get("features", []):
+        props = feature.get("properties") or {}
+        rid = props.get("road_id")
+        coords = (feature.get("geometry") or {}).get("coordinates") or []
+        if not rid or len(coords) < 2:
+            continue
+        distance = point_line_distance_m(lon, lat, coords)
+        current = best.get(rid)
+        aliases = list(props.get("aliases") or [])
+        route_refs = list(props.get("route_refs") or [])
+        if current is None or distance < current["distance_m"]:
+            best[rid] = {
+                "road_id": rid,
+                "display_name": props.get("display_name") or rid,
+                "priority": bool(props.get("priority")),
+                "distance_m": round(distance, 1),
+                "osm_way_id": props.get("osm_way_id"),
+                "aliases": aliases,
+                "route_refs": route_refs,
+                "highway": props.get("highway"),
+            }
+        else:
+            current["aliases"] = sorted(
+                set(current.get("aliases") or []) | set(aliases)
+            )
+            current["route_refs"] = sorted(
+                set(current.get("route_refs") or []) | set(route_refs)
+            )
+
+    return sorted(best.values(), key=lambda x: x["distance_m"])
 
 
 def classify(
@@ -129,10 +160,8 @@ def classify(
     candidates: list[dict[str, Any]],
     strong_m: float,
     candidate_m: float,
-    road_route_refs: dict[str, set[str]],
 ) -> dict[str, Any]:
     nearest = candidates[0] if candidates else None
-    title_roads = set(event.get("road_title_matches") or [])
     observed_refs = event_route_refs(event)
 
     if not nearest:
@@ -147,8 +176,9 @@ def classify(
 
     rid = nearest["road_id"]
     distance = float(nearest["distance_m"])
-    ref_support = bool(observed_refs & road_route_refs.get(rid, set()))
-    title_support = rid in title_roads
+    title_support = candidate_title_support(event, nearest)
+    candidate_refs = {str(x) for x in nearest.get("route_refs") or []}
+    ref_support = bool(observed_refs & candidate_refs)
 
     if distance <= strong_m and title_support:
         match_class = "GEOMETRY+TITLE_CONFIRMED"
@@ -173,13 +203,16 @@ def classify(
         "network_match_class": match_class,
         "network_road_id": rid if distance <= candidate_m else None,
         "confirmed_road_id": rid if confirmed else None,
+        "confirmed_road_name": (
+            nearest.get("display_name") if confirmed else None
+        ),
         "network_confirmed": confirmed,
         "network_distance_m": round(distance, 1),
         "event_route_refs": sorted(observed_refs),
         "route_ref_support": ref_support,
         "title_support": title_support,
         "nearest_core_road": nearest,
-        "road_distance_candidates": candidates,
+        "road_distance_candidates": candidates[:8],
     }
 
 
@@ -187,8 +220,6 @@ def main() -> int:
     args = parse_args()
     events = json.loads(args.events.read_text(encoding="utf-8"))
     network = json.loads(args.network.read_text(encoding="utf-8"))
-    config = json.loads(args.config.read_text(encoding="utf-8"))
-    refs = route_refs_by_road(config)
 
     out: list[dict[str, Any]] = []
     classes: dict[str, int] = {}
@@ -201,7 +232,6 @@ def main() -> int:
             nearest_by_road(event, network),
             args.strong_distance_m,
             args.candidate_distance_m,
-            refs,
         )
         row = dict(event)
         row.update(match)
@@ -212,18 +242,15 @@ def main() -> int:
         rid = match.get("network_road_id")
         if rid:
             candidate_counts[rid] = candidate_counts.get(rid, 0) + 1
-        confirmed_rid = match.get("confirmed_road_id")
-        if confirmed_rid:
-            confirmed_counts[confirmed_rid] = (
-                confirmed_counts.get(confirmed_rid, 0) + 1
-            )
+        rid = match.get("confirmed_road_id")
+        if rid:
+            confirmed_counts[rid] = confirmed_counts.get(rid, 0) + 1
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(out, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-
     print(
         json.dumps(
             {

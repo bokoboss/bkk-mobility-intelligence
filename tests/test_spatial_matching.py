@@ -4,8 +4,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).parents[1]
 SPEC = importlib.util.spec_from_file_location(
-    "match",
-    ROOT / "scripts/spatial/match_events_to_network.py",
+    "match", ROOT / "scripts/spatial/match_events_to_network.py"
 )
 match = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(match)
@@ -24,30 +23,16 @@ class SpatialMatchingTests(unittest.TestCase):
         )
         self.assertTrue(109 <= distance <= 113)
 
-    def test_geometry_and_title_strong(self):
-        event = {"road_title_matches": ["ram_inthra"]}
-        out = match.classify(
-            event,
-            [{"road_id": "ram_inthra", "distance_m": 25.0}],
-            80,
-            150,
-            {"ram_inthra": {"304"}},
-        )
-        self.assertEqual(
-            out["network_match_class"],
-            "GEOMETRY+TITLE_CONFIRMED",
-        )
-        self.assertTrue(out["network_confirmed"])
-
     def test_far_event_is_context_only(self):
-        event = {"road_title_matches": ["ram_inthra"]}
-        out = match.classify(
-            event,
-            [{"road_id": "ram_inthra", "distance_m": 450.0}],
-            80,
-            150,
-            {"ram_inthra": {"304"}},
-        )
+        event = {"title": "ถนนรามอินทรา"}
+        candidate = {
+            "road_id": "ram_inthra",
+            "display_name": "ถนนรามอินทรา",
+            "distance_m": 450.0,
+            "aliases": ["ถนนรามอินทรา"],
+            "route_refs": ["304"],
+        }
+        out = match.classify(event, [candidate], 80, 150)
         self.assertEqual(out["network_match_class"], "NETWORK_CONTEXT_ONLY")
         self.assertIsNone(out["network_road_id"])
 
