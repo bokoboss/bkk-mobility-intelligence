@@ -50,8 +50,23 @@ The workflow uploads `dist/` as the `now-dashboard-preview` artifact.
 
 ## Deployment
 
-No scheduled Pages deployment is enabled yet.
+The same Current Source Smoke workflow now supports **manual-only Pages
+deployment**. Normal pushes still build/QA the preview but do not publish it.
 
-This is deliberate: first validate the dashboard artifact and data semantics,
-then enable GitHub Pages and choose an appropriate refresh cadence without
-creating unnecessary Actions usage or repository commits.
+One-time repository setup is required in GitHub:
+
+1. `Settings → Pages`
+2. Under `Build and deployment`, set `Source` to **GitHub Actions**.
+
+After that, open the `Current Source Smoke` workflow, choose
+`Run workflow`, and enable the `deploy_pages` checkbox.
+
+The deploy path uses the official Pages Actions sequence:
+
+- `actions/configure-pages@v5`
+- `actions/upload-pages-artifact@v4`
+- `actions/deploy-pages@v4`
+
+No schedule is enabled yet. Refresh cadence should be chosen only after the
+published POC is reviewed, because live source polling and Pages deployment are
+separate concerns.

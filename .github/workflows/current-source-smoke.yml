@@ -2,6 +2,12 @@ name: Current Source Smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy_pages:
+        description: "Deploy the validated Now dashboard to GitHub Pages"
+        required: false
+        type: boolean
+        default: false
   push:
     paths:
       - "scripts/live/**"
@@ -39,12 +45,6 @@ jobs:
 
       - name: Fetch documented Longdo Traffic Index context
         run: python scripts/live/fetch_longdo_traffic_index.py
-
-      - name: Audit 2026 Longdo Traffic Index history
-        run: python scripts/audit/audit_longdo_traffic_index_history.py
-
-      - name: Audit documented 2026 Longdo event-history endpoint
-        run: python scripts/audit/audit_longdo_event_history_endpoint.py
 
       - name: Fetch iTIC/Longdo camera metadata
         run: python scripts/live/fetch_itic_cameras.py
@@ -112,6 +112,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
+      - name: Configure GitHub Pages
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_pages }}
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_pages }}
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/
+
       - name: Upload current-source artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -126,3 +136,18 @@ jobs:
             data/processed/now/
           if-no-files-found: warn
           retention-days: 3
+
+  deploy-pages:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_pages }}
+    needs: current-source-smoke
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
