@@ -19,9 +19,10 @@ USER_AGENT = "bkk-mobility-intelligence-phase0/0.3"
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--network", type=Path, required=True)
+    p.add_argument("--plan", type=Path, default=None)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--key-env", default="LONGDO_MAP_API_KEY")
-    p.add_argument("--max-points", type=int, default=8)
+    p.add_argument("--max-points", type=int, default=30)
     p.add_argument("--range", dest="search_range", type=float, default=0.001)
     p.add_argument("--timeout", type=float, default=20.0)
     return p.parse_args()
@@ -49,6 +50,22 @@ def sampling_points(network: dict[str, Any], max_points: int) -> list[dict[str, 
     return out
 
 
+def plan_points(plan: dict[str, Any], max_points: int) -> list[dict[str, Any]]:
+    rows = []
+    for item in plan.get("planned_points") or []:
+        if not item.get("road_id"):
+            continue
+        try:
+            lon = float(item["lon"])
+            lat = float(item["lat"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        rows.append({**item, "lon": lon, "lat": lat})
+        if len(rows) >= max_points:
+            break
+    return rows
+
+
 def fetch_one(
     key: str,
     point: dict[str, Any],
@@ -72,34 +89,43 @@ def fetch_one(
 def main() -> int:
     args = parse_args()
     retrieved_at = dt.datetime.now(dt.timezone.utc).isoformat()
-    key = os.environ.get(args.key_env)
+    network = json.loads(args.network.read_text(encoding="utf-8"))
 
+    plan = None
+    if args.plan and args.plan.exists():
+        plan = json.loads(args.plan.read_text(encoding="utf-8"))
+        points = plan_points(plan, args.max_points)
+        point_source = "TRAFFIC_COVERAGE_PLAN_V0.2"
+    else:
+        points = sampling_points(network, args.max_points)
+        point_source = "NETWORK_FALLBACK"
+
+    key = os.environ.get(args.key_env)
     if not key:
         result = {
-            "schema": "bkk-mobility-longdo-speed-v0.2",
+            "schema": "bkk-mobility-longdo-speed-v0.3",
             "provider": "Longdo Map Traffic Speed",
             "endpoint": ENDPOINT,
             "retrieved_at_utc": retrieved_at,
             "status": "BLOCKED_MISSING_API_KEY",
             "access_dependency": args.key_env,
+            "sampling_point_source": point_source,
+            "plan_schema": (plan or {}).get("schema"),
+            "planned_points": len(points),
             "requested_points": 0,
             "samples": [],
             "errors": [],
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(
-            json.dumps(result, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({
             "status": result["status"],
             "dependency": args.key_env,
+            "planned_points": len(points),
             "output": str(args.output),
         }, ensure_ascii=False, indent=2))
         return 0
 
-    network = json.loads(args.network.read_text(encoding="utf-8"))
-    points = sampling_points(network, args.max_points)
     rows: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     for point in points:
@@ -116,23 +142,25 @@ def main() -> int:
         status = "NO_USABLE_DATA"
 
     result = {
-        "schema": "bkk-mobility-longdo-speed-v0.2",
+        "schema": "bkk-mobility-longdo-speed-v0.3",
         "provider": "Longdo Map Traffic Speed",
         "endpoint": ENDPOINT,
         "retrieved_at_utc": retrieved_at,
         "status": status,
         "access_dependency": args.key_env,
+        "sampling_point_source": point_source,
+        "plan_schema": (plan or {}).get("schema"),
+        "planned_points": len(points),
         "requested_points": len(points),
         "samples": rows,
         "errors": errors,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({
         "status": status,
+        "sampling_point_source": point_source,
+        "planned_points": len(points),
         "requested_points": len(points),
         "successful": len(rows),
         "errors": len(errors),

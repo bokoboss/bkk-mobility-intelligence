@@ -17,6 +17,8 @@
   --road-strategic: #8ca3bf;
   --road-urban: #566579;
   --road-selected: #45d5b5;
+  --coverage-observed: #10b981;
+  --coverage-planned: #f59e0b;
 }
 
 :root[data-theme="light"] {
@@ -38,6 +40,8 @@
   --road-strategic: #5c7089;
   --road-urban: #a0aab7;
   --road-selected: #068b73;
+  --coverage-observed: #047857;
+  --coverage-planned: #b45309;
 }
 
 * { box-sizing: border-box; }
@@ -659,4 +663,68 @@ footer {
   .district-control { width: 100%; }
   .district-select { max-width: none; flex: 1; }
   .history-overview, .flood-detail-grid { grid-template-columns: 1fr; }
+}
+
+
+/* Traffic Coverage v0.2 */
+.map-window-button--coverage.is-active {
+  background: #0f766e;
+  color: #fff;
+}
+.coverage-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+}
+.coverage-stat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 15px 16px;
+}
+.coverage-stat span {
+  display: block;
+  color: var(--muted);
+  font-size: .62rem;
+  font-weight: 750;
+  letter-spacing: .09em;
+}
+.coverage-stat strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.75rem;
+  letter-spacing: -.04em;
+}
+.coverage-stat small {
+  display: block;
+  margin-top: 5px;
+  color: var(--subtle);
+  font-size: .68rem;
+  line-height: 1.45;
+}
+.coverage-detail-grid {
+  display: grid;
+  grid-template-columns: .8fr 1.2fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+.coverage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: .69rem;
+}
+.coverage-row:last-child { border-bottom: 0; }
+.coverage-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.coverage-row strong { font-size: .7rem; }
+.coverage-row em { color: var(--subtle); font-size: .64rem; font-style: normal; }
+@media (max-width: 900px) {
+  .coverage-overview { grid-template-columns: repeat(2, 1fr); }
+  .coverage-detail-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .coverage-overview { grid-template-columns: 1fr; }
 }

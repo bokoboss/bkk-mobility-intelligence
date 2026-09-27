@@ -37,6 +37,13 @@
       "frontage road"
     ]
   },
+  "traffic_sampling": {
+    "request_budget_per_run": 30,
+    "strategic_target_share": 0.7,
+    "max_points_per_road": 1,
+    "rotation_policy": "UTC-day deterministic rotation",
+    "budget_note": "Internal project-side request cap; not a provider quota."
+  },
   "roads": [
     {
       "id": "ram_inthra",
@@ -110,7 +117,8 @@
     "Events are clipped to district polygons before road matching, so bbox corner areas outside Bangkok are excluded.",
     "Strategic network: named motorway/trunk/primary/secondary roads.",
     "Urban network: named tertiary roads with sufficient in-Bangkok length.",
-    "The four original pilot roads retain stable IDs as focus roads, but the analytical scope is citywide.",
+    "The four original pilot roads retain stable IDs for continuity only; they receive no special Bangkok-wide visual or sampling priority.",
+    "Traffic sampling uses a configurable internal request budget and rotating district-aware plan; it is not a provider quota.",
     "BMA official district geometry remains the intended authoritative replacement when automated access is stable."
   ]
 }

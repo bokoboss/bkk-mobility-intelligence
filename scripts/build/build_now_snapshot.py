@@ -17,6 +17,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--cameras", type=Path, default=Path("data/raw/current_context/cameras.study_area.json"))
     p.add_argument("--speed", type=Path, default=Path("data/processed/current_speed/longdo_speed.json"))
     p.add_argument("--traffic-state", type=Path, default=Path("data/processed/current_speed/traffic_state.json"))
+    p.add_argument("--traffic-coverage", type=Path, default=Path("data/processed/current_speed/traffic_coverage.json"))
     p.add_argument("--config", type=Path, default=Path("config/study_area.json"))
     p.add_argument("--network", type=Path, default=Path("data/processed/osm/core_roads.geojson"))
     p.add_argument("--output", type=Path, default=Path("data/processed/now/latest_status.json"))
@@ -58,6 +59,7 @@ def main() -> int:
     cameras = load(args.cameras)
     config = load(args.config)
     network = load(args.network)
+    traffic_coverage = load(args.traffic_coverage) if args.traffic_coverage.exists() else None
 
     roads = network_roads(network)
     for road in config.get("roads", []):
@@ -98,6 +100,12 @@ def main() -> int:
     traffic_roads = (traffic_state or {}).get("roads") or {}
     traffic_summary = (traffic_state or {}).get("summary") or {}
     traffic_access = (traffic_state or {}).get("access_state") or "BLOCKED_NO_TRAFFIC_STATE"
+    coverage_summary = (traffic_coverage or {}).get("summary") or {}
+    planned_road_ids = {
+        str(x.get("road_id")) for x in (traffic_coverage or {}).get("planned_points") or []
+        if x.get("road_id")
+    }
+    observed_road_ids = set((traffic_coverage or {}).get("observed_road_ids") or [])
 
     for rid, road in roads.items():
         state = traffic_roads.get(rid) or {
@@ -111,6 +119,10 @@ def main() -> int:
         road["confirmed_incident_count"] = len(road["confirmed_incidents"])
         road["traffic_state"] = state
         road["speed_status"] = state.get("status") or "NO_SAMPLE"
+        road["traffic_coverage"] = {
+            "planned_this_run": rid in planned_road_ids,
+            "observed_this_run": rid in observed_road_ids,
+        }
         road["data_statement"] = (
             "Confirmed incident activity present"
             if road["confirmed_incident_count"]
@@ -158,7 +170,7 @@ def main() -> int:
     )
 
     result = {
-        "schema": "bkk-mobility-now-v0.3",
+        "schema": "bkk-mobility-now-v0.4",
         "study_area_id": manifest.get("study_area_id"),
         "study_area_name": config.get("name"),
         "study_area_bbox_wgs84": config.get("bbox_wgs84"),
@@ -191,6 +203,17 @@ def main() -> int:
                 "usable_observation_count": traffic_summary.get("usable_observation_count", 0),
                 "interpretation": traffic_summary.get("interpretation"),
             },
+            "traffic_coverage": {
+                "schema": (traffic_coverage or {}).get("schema"),
+                "access_state": (traffic_coverage or {}).get("access_state"),
+                "request_budget": ((traffic_coverage or {}).get("plan") or {}).get("request_budget"),
+                "planned_road_count": coverage_summary.get("planned_road_count", 0),
+                "planned_district_count": coverage_summary.get("planned_district_count", 0),
+                "observed_road_count": coverage_summary.get("observed_road_count", 0),
+                "observed_district_count": coverage_summary.get("observed_district_count", 0),
+                "planned_road_coverage_ratio": coverage_summary.get("planned_road_coverage_ratio", 0.0),
+                "observed_road_coverage_ratio": coverage_summary.get("observed_road_coverage_ratio", 0.0),
+            },
         },
         "city_context": {
             "traffic_index": ti["data"],
@@ -202,6 +225,8 @@ def main() -> int:
             "dynamic_road_count": len(roads) - priority_count,
             "roads_with_confirmed_incidents": active_roads,
             "roads_with_speed_samples": sampled_road_count,
+            "traffic_coverage_planned_roads": coverage_summary.get("planned_road_count", 0),
+            "traffic_coverage_observed_roads": coverage_summary.get("observed_road_count", 0),
             "strategic_road_count": strategic_count,
             "urban_road_count": urban_count,
             "district_count": int((config.get("admin_geometry") or {}).get("district_count", 50)),
@@ -230,12 +255,13 @@ def main() -> int:
             "segment_speed_now": (
                 "EXPERIMENTAL_PARTIAL" if sampled_road_count else "BLOCKED_ON_PROVIDER_ACCESS"
             ),
+            "traffic_coverage": "READY" if traffic_coverage is not None else "MISSING",
             "current_vs_baseline_segment": (
                 "BLOCKED_ON_ROAD_TIME_BASELINE"
                 if sampled_road_count
                 else "BLOCKED_ON_SEGMENT_SPEED"
             ),
-            "now_dashboard": "READY_FOR_BANGKOK_WIDE_INCIDENT_AND_CONTEXT_POC",
+            "now_dashboard": "READY_FOR_BANGKOK_WIDE_TRAFFIC_COVERAGE_V0_2",
         },
     }
 

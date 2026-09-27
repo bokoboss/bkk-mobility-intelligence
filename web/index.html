@@ -40,7 +40,7 @@
           <div class="metric-foot">Bangkok-wide network · 50-district polygon clip · geometry + identity + deduplication</div>
         </article>
         <article class="metric-card">
-          <div class="metric-label">SEGMENT SPEED</div>
+          <div class="metric-label">TRAFFIC SPEED COVERAGE</div>
           <div class="metric-mainline"><span class="metric-value metric-value--small" id="speedValue">—</span></div>
           <div class="metric-status metric-status--muted" id="speedStatus">ยังไม่มี current speed source</div>
           <div class="metric-foot">ไม่อนุมานความเร็วจาก incident หรือ Traffic Index</div>
@@ -79,6 +79,7 @@
                 <button class="map-window-button map-window-button--flood" data-window="flood7d" type="button">Flood 7D</button>
                 <button class="map-window-button map-window-button--flood" data-window="flood30d" type="button">Flood 30D</button>
                 <button class="map-window-button map-window-button--watch" data-window="floodwatch" type="button">Flood Watch</button>
+                <button class="map-window-button map-window-button--coverage" data-window="coverage" type="button">Coverage</button>
               </div>
               <button id="fitAreaButton" class="map-tool-button" type="button">Fit Area</button>
               <span class="map-provider">OpenFreeMap · OSM</span>
@@ -96,6 +97,21 @@
           </div>
           <div class="incident-list" id="incidentList"></div>
         </aside>
+      </section>
+
+      <section class="section-heading" id="traffic-coverage">
+        <div><div class="panel-kicker">TRAFFIC COVERAGE V0.2</div><h2>Planned Sampling vs Observed Speed Coverage</h2></div>
+        <p>Planned = จุดที่ตั้งใจ probe ภายใต้งบ request ภายในระบบ; Observed = ได้ speed observation ใช้งานจริงเท่านั้น</p>
+      </section>
+      <section class="coverage-overview">
+        <article class="coverage-stat"><span>REQUEST BUDGET</span><strong id="coverageBudget">—</strong><small>internal cap / run · not provider quota</small></article>
+        <article class="coverage-stat"><span>PLANNED ROADS</span><strong id="coveragePlannedRoads">—</strong><small id="coveragePlannedDistricts">—</small></article>
+        <article class="coverage-stat"><span>OBSERVED ROADS</span><strong id="coverageObservedRoads">—</strong><small id="coverageObservedPct">—</small></article>
+        <article class="coverage-stat"><span>OBSERVED DISTRICTS</span><strong id="coverageObservedDistricts">—</strong><small>usable speed observations only</small></article>
+      </section>
+      <section class="coverage-detail-grid">
+        <article class="panel"><div class="history-rank-title">NETWORK TIER COVERAGE</div><div id="coverageTierList"></div></article>
+        <article class="panel"><div class="history-rank-title">DISTRICT COVERAGE GAPS</div><div class="watch-note">เรียงจาก observed coverage ต่ำก่อน; road-count coverage ไม่ใช่ lane-km หรือ directional coverage</div><div id="coverageDistrictList"></div></article>
       </section>
 
       <section class="section-heading">
@@ -230,7 +246,7 @@
         <div class="evidence-grid">
           <div class="evidence-item evidence-item--ready"><span>READY</span><strong>Bangkok-wide incident network</strong><small>50 districts + dynamic OSM strategic/urban road catalog + iTIC/Longdo incidents</small></div>
           <div class="evidence-item evidence-item--ready"><span>READY</span><strong>City context</strong><small>Traffic Index + 2026 same-time baseline</small></div>
-          <div class="evidence-item evidence-item--blocked"><span>BLOCKED</span><strong>Segment speed</strong><small>รอ provider/API access ที่ให้ speed รายช่วงถนน</small></div>
+          <div class="evidence-item evidence-item--blocked"><span>PARTIAL / BLOCKED</span><strong>Traffic speed coverage</strong><small>มี rotating sampling plan แล้ว; observed speed ยังขึ้นกับ provider/API access และ coverage จริง</small></div>
         </div>
       </section>
     </main>

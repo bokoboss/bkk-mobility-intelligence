@@ -149,15 +149,22 @@ jobs:
       - name: Build flood/rain intelligence
         run: python scripts/flood/build_flood_intelligence.py
 
+      - name: Build Traffic Coverage v0.2 sampling plan
+        run: python scripts/analysis/build_traffic_coverage.py --plan-only
+
       - name: Build Longdo current speed evidence (credential-gated)
         run: |
           python scripts/live/fetch_longdo_traffic_speed.py \
             --network data/processed/osm/core_roads.geojson \
+            --plan data/processed/current_speed/traffic_sampling_plan.json \
             --output data/processed/current_speed/longdo_speed.json \
-            --max-points 8
+            --max-points 30
 
       - name: Build provider-neutral traffic state contract
         run: python scripts/analysis/build_traffic_state.py
+
+      - name: Finalize Traffic Coverage v0.2
+        run: python scripts/analysis/build_traffic_coverage.py
 
       - name: Build frontend-neutral Now snapshot
         run: python scripts/build/build_now_snapshot.py
@@ -166,7 +173,7 @@ jobs:
         run: |
           python scripts/build/build_static_site.py
           test -s dist/index.html
-          python -c 'import json; json.load(open("dist/data/latest_status.json", encoding="utf-8")); json.load(open("dist/data/core_roads.geojson", encoding="utf-8")); json.load(open("dist/data/recent_incident_intelligence.json", encoding="utf-8")); json.load(open("dist/data/flood_intelligence.json", encoding="utf-8")); json.load(open("data/processed/current_speed/traffic_state.json", encoding="utf-8")); d=json.load(open("dist/data/bangkok_districts.geojson", encoding="utf-8")); assert len(d.get("features", [])) == 50'
+          python -c 'import json; json.load(open("dist/data/latest_status.json", encoding="utf-8")); json.load(open("dist/data/core_roads.geojson", encoding="utf-8")); json.load(open("dist/data/recent_incident_intelligence.json", encoding="utf-8")); json.load(open("dist/data/flood_intelligence.json", encoding="utf-8")); json.load(open("data/processed/current_speed/traffic_state.json", encoding="utf-8")); json.load(open("dist/data/traffic_coverage.json", encoding="utf-8")); d=json.load(open("dist/data/bangkok_districts.geojson", encoding="utf-8")); assert len(d.get("features", [])) == 50'
 
       - name: Print latest summary
         if: always()

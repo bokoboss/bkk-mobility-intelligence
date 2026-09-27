@@ -32,6 +32,11 @@ def parse_args() -> argparse.Namespace:
         default=Path("data/processed/flood/flood_intelligence.json"),
     )
     p.add_argument(
+        "--coverage",
+        type=Path,
+        default=Path("data/processed/current_speed/traffic_coverage.json"),
+    )
+    p.add_argument(
         "--districts",
         type=Path,
         default=Path("data/reference/bangkok_districts.geojson"),
@@ -124,6 +129,7 @@ def main() -> int:
         args.network,
         args.history,
         args.flood,
+        args.coverage,
         args.districts,
     ]
     missing = [str(path) for path in required if not path.exists()]
@@ -142,6 +148,7 @@ def main() -> int:
     shutil.copy2(args.status, data_dir / "latest_status.json")
     shutil.copy2(args.history, data_dir / "recent_incident_intelligence.json")
     shutil.copy2(args.flood, data_dir / "flood_intelligence.json")
+    shutil.copy2(args.coverage, data_dir / "traffic_coverage.json")
 
     import sys
     sys.path.insert(0, str(Path("scripts/spatial").resolve()))
@@ -176,6 +183,7 @@ def main() -> int:
             "data/core_roads.geojson",
             "data/recent_incident_intelligence.json",
             "data/flood_intelligence.json",
+            "data/traffic_coverage.json",
             "data/bangkok_districts.geojson",
         ],
     }

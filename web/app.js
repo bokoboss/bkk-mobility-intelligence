@@ -16,6 +16,7 @@
   let networkData = null;
   let historyData = null;
   let floodData = null;
+  let coverageData = null;
   let districtData = null;
   let selectedDistrict = "all";
   let selectedRoad = "all";
@@ -103,6 +104,7 @@
     if ($("districtSelect")) $("districtSelect").value = selectedDistrict;
     renderHistorySummary();
     renderFloodSummary();
+    renderCoverageSummary();
     renderLegend();
     renderFilters();
     renderIncidents();
@@ -186,6 +188,7 @@
   }
 
   function windowIncidents(windowId = activeWindow) {
+    if (windowId === "coverage") return [];
     if (windowId === "now") return allIncidents();
     if (windowId === "flood7d" || windowId === "flood30d" || windowId === "floodwatch") {
       const base = windowId === "flood7d" ? "7d" : "30d";
@@ -207,6 +210,7 @@
     if (activeWindow === "flood7d") return "น้ำท่วม · 7 วันล่าสุด";
     if (activeWindow === "flood30d") return "น้ำท่วม · 30 วันล่าสุด";
     if (activeWindow === "floodwatch") return "Flood Watch · 30 วัน + TMD 24h";
+    if (activeWindow === "coverage") return "Traffic Coverage v0.2";
     return "ตอนนี้";
   }
 
@@ -261,14 +265,17 @@
     document.querySelectorAll("[data-window]").forEach((button) => {
       button.classList.toggle("is-active", button.dataset.window === activeWindow);
     });
-    $("incidentPanelTitle").textContent = "เหตุที่ยืนยันได้ · " + displayWindowLabel();
+    $("incidentPanelTitle").textContent = activeWindow === "coverage"
+      ? "Traffic Coverage · Planned vs Observed"
+      : "เหตุที่ยืนยันได้ · " + displayWindowLabel();
   }
 
   function setWindow(windowId) {
-    if (!["now", "7d", "30d", "flood7d", "flood30d", "floodwatch"].includes(windowId)) return;
+    if (!["now", "7d", "30d", "flood7d", "flood30d", "floodwatch", "coverage"].includes(windowId)) return;
     activeWindow = windowId;
     selectedRoad = "all";
     renderWindowControls();
+    renderCoverageSummary();
     renderLegend();
     renderFilters();
     renderIncidents();
@@ -363,6 +370,40 @@
     ).join("") || '<div class="empty-list">ยังไม่มี road watch profile</div>';
   }
 
+  function renderCoverageSummary() {
+    if (!coverageData) return;
+    const s = coverageData.summary || {};
+    const plan = coverageData.plan || {};
+    const plannedPct = Number(s.planned_road_coverage_ratio || 0) * 100;
+    const observedPct = Number(s.observed_road_coverage_ratio || 0) * 100;
+    $("coverageBudget").textContent = plan.request_budget ?? "—";
+    $("coveragePlannedRoads").textContent = s.planned_road_count ?? "—";
+    $("coveragePlannedDistricts").textContent = (s.planned_district_count ?? "—") + " / " + (s.eligible_district_count ?? "—");
+    $("coverageObservedRoads").textContent = s.observed_road_count ?? "—";
+    $("coverageObservedPct").textContent = observedPct.toFixed(1) + "% observed · " + plannedPct.toFixed(1) + "% planned";
+    $("coverageObservedDistricts").textContent = (s.observed_district_count ?? "—") + " / " + (s.eligible_district_count ?? "—");
+
+    $("coverageTierList").innerHTML = (coverageData.tier_coverage || []).map((row) =>
+      '<div class="coverage-row"><span>' + escapeHtml(row.network_tier) + '</span>'
+      + '<strong>' + row.observed_road_count + ' / ' + row.eligible_road_count + '</strong>'
+      + '<em>planned ' + row.planned_road_count + '</em></div>'
+    ).join("") || '<div class="empty-list">ยังไม่มี coverage summary</div>';
+
+    const districtRows = (coverageData.district_coverage || [])
+      .filter((row) => selectedDistrict === "all" || String(row.district_id) === String(selectedDistrict))
+      .sort((a, b) =>
+        Number(a.observed_coverage_ratio || 0) - Number(b.observed_coverage_ratio || 0)
+        || Number(a.planned_coverage_ratio || 0) - Number(b.planned_coverage_ratio || 0)
+        || String(a.district_name_th || "").localeCompare(String(b.district_name_th || ""), "th")
+      )
+      .slice(0, selectedDistrict === "all" ? 12 : 1);
+    $("coverageDistrictList").innerHTML = districtRows.map((row) =>
+      '<div class="coverage-row"><span>' + escapeHtml(row.district_name_th) + '</span>'
+      + '<strong>' + row.observed_road_count + ' / ' + row.eligible_road_count + '</strong>'
+      + '<em>planned ' + row.planned_road_count + '</em></div>'
+    ).join("") || '<div class="empty-list">ยังไม่มี district coverage</div>';
+  }
+
   function renderMetrics() {
     const ti = statusData.city_context.traffic_index;
     const base = statusData.city_context.traffic_index_baseline.baseline;
@@ -402,6 +443,15 @@
   }
 
   function renderLegend() {
+    if (activeWindow === "coverage") {
+      $("mapLegend").innerHTML = [
+        '<div class="legend-item"><span class="legend-line" style="background:#10b981;height:4px"></span>Observed speed</div>',
+        '<div class="legend-item"><span class="legend-line" style="background:#f59e0b;height:4px"></span>Planned probe</div>',
+        '<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--subtle") + '"></span>Not planned this run</div>',
+        '<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--road-selected") + ';height:4px"></span>Selected</div>'
+      ].join("");
+      return;
+    }
     const items = [
       '<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--road-strategic") + '"></span>Strategic road</div>',
       '<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--road-urban") + '"></span>Urban road</div>',
@@ -452,6 +502,7 @@
     if (source) source.setData(incidentGeoJSON());
 
     if (map.getLayer("confirmed-incidents")) {
+      map.setLayoutProperty("confirmed-incidents", "visibility", activeWindow === "coverage" ? "none" : "visible");
       map.setPaintProperty("confirmed-incidents", "circle-color", incidentColor());
       map.setPaintProperty("confirmed-incidents", "circle-opacity", activeWindow === "now" ? 0.94 : 0.72);
       map.setPaintProperty(
@@ -540,6 +591,35 @@
     }
   }
 
+  function coverageRoadColorExpression() {
+    const observed = (coverageData?.observed_road_ids || []).map(String);
+    const planned = [...new Set((coverageData?.planned_points || []).map((x) => String(x.road_id || "")).filter(Boolean))];
+    return [
+      "case",
+      ["in", ["get", "road_id"], ["literal", observed]], "#10b981",
+      ["in", ["get", "road_id"], ["literal", planned]], "#f59e0b",
+      cssVar("--subtle")
+    ];
+  }
+
+  function activeRoadColorExpression() {
+    return activeWindow === "coverage" ? coverageRoadColorExpression() : roadColorExpression();
+  }
+
+  function activeRoadWidthExpression() {
+    if (activeWindow !== "coverage") {
+      return ["match", ["get", "network_tier"], "STRATEGIC", 2.8, "URBAN", 1.6, 1.6];
+    }
+    const observed = (coverageData?.observed_road_ids || []).map(String);
+    const planned = [...new Set((coverageData?.planned_points || []).map((x) => String(x.road_id || "")).filter(Boolean))];
+    return [
+      "case",
+      ["in", ["get", "road_id"], ["literal", observed]], 4.8,
+      ["in", ["get", "road_id"], ["literal", planned]], 3.8,
+      1.2
+    ];
+  }
+
   function roadColorExpression() {
     return [
       "match", ["get", "network_tier"],
@@ -618,8 +698,8 @@
       source: "road-network",
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        "line-color": roadColorExpression(),
-        "line-width": ["match", ["get", "network_tier"], "STRATEGIC", 2.8, "URBAN", 1.6, 1.6],
+        "line-color": activeRoadColorExpression(),
+        "line-width": activeRoadWidthExpression(),
         "line-opacity": 0.72
       }
     });
@@ -827,6 +907,10 @@
     });
   }
 
+  function plannedRoadIds() {
+    return [...new Set((coverageData?.planned_points || []).map((x) => String(x.road_id || "")).filter(Boolean))];
+  }
+
   function filterRoadIds() {
     const ids = incidentRoadIds().filter(roadInSelectedDistrict).slice(0, 12);
     sampledRoadIds().forEach((id) => {
@@ -837,6 +921,14 @@
   }
 
   function renderFilters() {
+    if (activeWindow === "coverage") {
+      const s = coverageData?.summary || {};
+      $("incidentFilters").innerHTML =
+        '<button type="button" class="filter-chip is-active" disabled>Planned ' + (s.planned_road_count ?? 0) + '</button>'
+        + '<button type="button" class="filter-chip" disabled>Observed ' + (s.observed_road_count ?? 0) + '</button>'
+        + '<button type="button" class="filter-chip" disabled>Districts ' + (s.observed_district_count ?? 0) + '/' + (s.eligible_district_count ?? 0) + '</button>';
+      return;
+    }
     const chips = [
       { id: "all", label: "ทั้งหมด", count: incidentsForDistrict().length },
       ...filterRoadIds().map((id) => ({
@@ -855,6 +947,21 @@
   }
 
   function renderIncidents() {
+    if (activeWindow === "coverage") {
+      const rows = (coverageData?.district_coverage || [])
+        .filter((row) => selectedDistrict === "all" || String(row.district_id) === String(selectedDistrict))
+        .sort((a, b) =>
+          Number(a.observed_coverage_ratio || 0) - Number(b.observed_coverage_ratio || 0)
+          || Number(a.planned_coverage_ratio || 0) - Number(b.planned_coverage_ratio || 0)
+        )
+        .slice(0, 20);
+      $("incidentList").innerHTML = rows.map((row) =>
+        '<article class="incident-item"><div class="incident-title">' + escapeHtml(row.district_name_th) + '</div>'
+        + '<div class="incident-meta">Observed ' + row.observed_road_count + '/' + row.eligible_road_count
+        + ' roads · Planned ' + row.planned_road_count + '</div></article>'
+      ).join("") || '<div class="empty-list">ยังไม่มี coverage data</div>';
+      return;
+    }
     const incidents = incidentsForDistrict().filter((x) => selectedRoad === "all" || x.road_id === selectedRoad);
     if (!incidents.length) {
       $("incidentList").innerHTML = '<div class="empty-list">ยังไม่พบเหตุที่ยืนยันได้ในตัวกรองนี้</div>';
@@ -877,6 +984,13 @@
   }
 
   function cardRoadIds() {
+    if (activeWindow === "coverage") {
+      const observed = sampledRoadIds().filter(roadInSelectedDistrict);
+      const planned = plannedRoadIds().filter((id) => roadInSelectedDistrict(id) && !observed.includes(id));
+      const ids = [...observed, ...planned].slice(0, 12);
+      if (selectedRoad !== "all" && !ids.includes(selectedRoad)) ids.push(selectedRoad);
+      return ids;
+    }
     const ids = incidentRoadIds().filter(roadInSelectedDistrict).slice(0, 12);
     sampledRoadIds().forEach((id) => {
       if (ids.length < 12 && roadInSelectedDistrict(id) && !ids.includes(id)) ids.push(id);
@@ -901,6 +1015,10 @@
         && Number.isFinite(Number(traffic.median_speed_kmh))
         ? "Speed sample " + Number(traffic.median_speed_kmh).toFixed(1) + " km/h · " + movementLabel
         : "Traffic speed: ยังไม่มีตัวอย่างที่ใช้ได้";
+      const coverage = road.traffic_coverage || {};
+      const coverageNote = coverage.observed_this_run
+        ? "Observed speed sample"
+        : coverage.planned_this_run ? "Planned probe · no usable observation yet" : "Not planned this run";
       const selected = selectedRoad === id ? " is-selected" : "";
       return '<article class="road-card' + selected + '" data-road-card="' + id
         + '" style="--road-color:' + roadColor(id) + '">'
@@ -914,6 +1032,7 @@
         + '<div class="road-card-note">'
         + (incidentsNow ? "พบ incident ที่ยืนยันกับแนวถนนใน feed ปัจจุบัน" : "ยังไม่พบ incident ปัจจุบันที่ยืนยันได้")
         + "<br>" + escapeHtml(speedNote)
+        + (activeWindow === "coverage" ? "<br>" + escapeHtml(coverageNote) : "")
         + "</div></article>";
     }).join("");
     document.querySelectorAll("[data-road-card]").forEach((card) => {
@@ -923,6 +1042,9 @@
 
   function updateMapSelection() {
     if (!map || !mapReady || !map.getLayer("road-network")) return;
+
+    map.setPaintProperty("road-network", "line-color", activeRoadColorExpression());
+    map.setPaintProperty("road-network", "line-width", activeRoadWidthExpression());
 
     if (map.getLayer("district-selected")) {
       map.setFilter(
@@ -940,8 +1062,8 @@
         "road-network",
         "line-opacity",
         selectedDistrict === "all"
-          ? 0.72
-          : ["case", ["in", ["get", "road_id"], ["literal", visibleRoadIds]], 0.72, 0.07]
+          ? (activeWindow === "coverage" ? 0.88 : 0.72)
+          : ["case", ["in", ["get", "road_id"], ["literal", visibleRoadIds]], activeWindow === "coverage" ? 0.88 : 0.72, 0.07]
       );
       map.setPaintProperty("confirmed-incidents", "circle-opacity", activeWindow === "now" ? 0.94 : 0.72);
     } else {
@@ -982,7 +1104,8 @@
     safeStorageSet("bkkmi-theme", theme);
     if (statusData) renderLegend();
     if (map && mapReady && map.getLayer("road-network")) {
-      map.setPaintProperty("road-network", "line-color", roadColorExpression());
+      map.setPaintProperty("road-network", "line-color", activeRoadColorExpression());
+      map.setPaintProperty("road-network", "line-width", activeRoadWidthExpression());
       updateIncidentMapSource();
       if (selectedRoad !== "all") {
         map.setPaintProperty("road-selected", "line-color", cssVar("--road-selected"));
@@ -1003,24 +1126,27 @@
   async function load() {
     try {
       setupTheme();
-      const [statusRes, networkRes, historyRes, floodRes, districtRes] = await Promise.all([
+      const [statusRes, networkRes, historyRes, floodRes, coverageRes, districtRes] = await Promise.all([
         fetch("data/latest_status.json", { cache: "no-store" }),
         fetch("data/core_roads.geojson", { cache: "no-store" }),
         fetch("data/recent_incident_intelligence.json", { cache: "no-store" }),
         fetch("data/flood_intelligence.json", { cache: "no-store" }),
+        fetch("data/traffic_coverage.json", { cache: "no-store" }),
         fetch("data/bangkok_districts.geojson", { cache: "no-store" })
       ]);
-      if (!statusRes.ok || !networkRes.ok || !historyRes.ok || !floodRes.ok || !districtRes.ok) throw new Error("data artifact not available");
+      if (!statusRes.ok || !networkRes.ok || !historyRes.ok || !floodRes.ok || !coverageRes.ok || !districtRes.ok) throw new Error("data artifact not available");
       statusData = await statusRes.json();
       networkData = await networkRes.json();
       historyData = await historyRes.json();
       floodData = await floodRes.json();
+      coverageData = await coverageRes.json();
       districtData = await districtRes.json();
       if ((districtData.features || []).length !== 50) throw new Error("Bangkok district geometry is incomplete");
       renderMetrics();
       renderDistrictSelect();
       renderHistorySummary();
       renderFloodSummary();
+      renderCoverageSummary();
       renderLegend();
       renderWindowControls();
       renderFilters();

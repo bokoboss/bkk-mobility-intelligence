@@ -109,3 +109,23 @@ node --check web/app.js
 
 The GitHub Actions workflow runs these gates before publishing the validated
 static dashboard.
+
+
+## Traffic Coverage v0.2
+
+The Bangkok-wide pipeline now builds a deterministic rotating sampling plan
+before the provider adapter runs.
+
+Artifacts:
+
+- `traffic_sampling_plan.json`: planned road-district probe points under the
+  internal request budget;
+- `traffic_coverage.json`: planned vs observed coverage by network tier and
+  district.
+
+Default internal request budget is 30 probe points/run with a 70% Strategic
+target share and daily UTC rotation. This cap is an internal safety control, not
+a claimed Longdo/iTIC provider quota.
+
+Observed Coverage counts only usable speed observations. Planned probes are
+never presented as measured traffic.
