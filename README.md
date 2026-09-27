@@ -7,12 +7,13 @@ A proof-of-concept project for turning Bangkok mobility and disruption data into
 
 ## POC question
 
-Can we select one real Bangkok corridor and reliably explain:
+Can we select one compact real Bangkok road network and reliably explain:
 
-- how traffic performance changes by time of day,
+- how traffic performance changes by road, direction and time of day,
 - where recurring congestion occurs,
-- what disruptions/incidents occur nearby,
+- what disruptions/incidents occur on or near each road,
 - how conditions differ during disruption periods,
+- whether disruption on one road is associated with changes on nearby alternatives,
 - and what additional survey data would still be required for a professional traffic study?
 
 ## Initial data source
@@ -50,11 +51,12 @@ Before building the application, the project will audit candidate datasets for:
 - historical depth,
 - access method and file size,
 - licensing / attribution requirements,
-- analytical usefulness for a Bangkok corridor.
+- analytical usefulness for the selected Bangkok pilot network.
 
 See:
 - `docs/POC_SCOPE.md`
 - `docs/DATA_SOURCES.md`
+- `docs/TEST_AREA.md`
 
 ## Planned progression
 
@@ -66,7 +68,7 @@ See:
 
 ## Scope discipline
 
-This is not intended to become another generic traffic map. The target is an analytical engine that converts mobility, incident, weather/flood, road-network, traffic-volume and safety data into corridor-level transportation intelligence.
+This is not intended to become another generic traffic map. The target is an analytical engine that converts mobility, incident, weather/flood, road-network, traffic-volume and safety data into road-segment and small-network transportation intelligence.
 
 ## Data attribution
 

@@ -10,7 +10,7 @@ The POC is technically feasible enough to proceed to a controlled data experimen
 
 The strongest foundation is the iTIC ecosystem: the iTIC Traffic Data Hub states that its nationwide GPS probe data include position, speed and heading from more than 160,000 probes, 24/7, and that probe data can be used to calculate Link Speed and Travel Time Index (TTI). The iTIC Open Data Archive also publishes historical traffic incidents, traffic status and raw probe data under CC BY 4.0.
 
-The main Phase 0 constraint is **data volume and source heterogeneity**, not lack of data. Raw probe archives are roughly 0.8–2.7 GB per month in the visible archive, while historical event archives can exceed 1 GB per year. The POC should therefore use corridor-first spatial extraction and offline preprocessing rather than sending raw national data to the web client.
+The main Phase 0 constraint is **data volume and source heterogeneity**, not lack of data. Raw probe archives are roughly 0.8–2.7 GB per month in the visible archive, while historical event archives can exceed 1 GB per year. The POC should therefore use study-area-first spatial extraction, road/segment map matching, and offline preprocessing rather than sending raw national data to the web client.
 
 ## Recommended test design
 
@@ -20,10 +20,10 @@ Use two tracks:
 
 Use a historical period where both incident and probe archives are explicitly covered by the published iTIC archive license.
 
-- Corridor: Rama IX Road, Ratchadaphisek intersection to Srinagarindra interchange
+- Pilot network: Ram Inthra Road, Prasert-Manukitch Road, Pradit Manutham Road and Nuan Chan Road
 - Initial analysis window: one selected week, expanded only if coverage is adequate
 - Core sources: iTIC historical incidents + iTIC raw probe
-- Goal: prove spatial extraction, speed profiles, event matching and disruption comparison
+- Goal: prove study-area extraction, road/segment matching, directional speed profiles, event matching, disruption comparison, and at least one cross-road impact test
 
 ### Track B — currentness / live-feed check
 
@@ -145,7 +145,7 @@ Raw local cache (not Git)
 Normalize + QA
         |
         v
-Spatial pre-filter around corridor
+Spatial pre-filter around study area
         |
         v
 Parquet / GeoParquet
@@ -170,14 +170,14 @@ Pass when we can:
 - ingest a historical sample;
 - normalize IDs/timestamps/coordinates/types;
 - remove snapshot duplicates correctly;
-- extract events within a configurable corridor buffer.
+- extract events inside the study area and match them to a road/segment using geometry plus textual/context checks.
 
 ### Gate 2 — probe ETL
 
 Pass when we can:
 
 - extract only a chosen period from a monthly archive;
-- spatially pre-filter observations near the corridor;
+- spatially pre-filter observations to the four-road study area;
 - produce reliable sample counts and directional speed distributions.
 
 ### Gate 3 — analytical signal
@@ -207,7 +207,7 @@ Optional for first pass. Add water/rain/construction/safety only after the core 
 
 ## Immediate next task
 
-Build the first reproducible ingest/audit path for the live iTIC event JSON, then obtain one historical incident sample and one probe-day sample for the Rama IX test corridor. The web UI remains intentionally deferred.
+Build the first reproducible ingest/audit path for the live iTIC event JSON, then obtain one historical incident sample and one probe-day sample for the Ram Inthra–Prasert-Manukitch–Pradit Manutham–Nuan Chan pilot network. The web UI remains intentionally deferred.
 
 ## Official references
 

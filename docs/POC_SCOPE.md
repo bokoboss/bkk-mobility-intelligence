@@ -2,7 +2,7 @@
 
 ## Objective
 
-Validate whether open and publicly accessible Bangkok mobility datasets can be combined into a corridor-level analytical product that explains traffic performance, disruption patterns, and data gaps.
+Validate whether open and publicly accessible Bangkok mobility datasets can be combined into a compact road-network analytical product that explains segment-level traffic performance, disruption patterns, cross-corridor effects, and data gaps.
 
 ## Phase 0 — Data Feasibility Audit
 
@@ -10,16 +10,18 @@ The first phase will not build the full application. It will establish whether t
 
 ### Core questions
 
-1. Can a real Bangkok corridor be represented consistently across all datasets?
-2. Can incident/event records be spatially matched to the corridor?
-3. Can traffic performance be measured over time with adequate temporal resolution?
+1. Can a compact Bangkok road network be represented consistently across all datasets?
+2. Can incident/event records be matched to the correct road or road segment without relying on a broad buffer alone?
+3. Can traffic performance be measured per road, direction and time period with adequate temporal resolution?
 4. Can disruption periods be compared with normal baseline conditions?
-5. Are the licensing and attribution requirements compatible with a POC?
-6. What important engineering data remain unavailable and would still require field surveys?
+5. Can an incident on one road be associated with measurable changes on nearby alternative roads?
+6. Are the licensing and attribution requirements compatible with a POC?
+7. What important engineering data remain unavailable and would still require field surveys?
 
 ## Candidate POC outputs
 
-- Corridor map
+- Study-area network map
+- Road / segment performance profiles
 - Incident timeline
 - Event type distribution
 - Typical daily traffic profile
@@ -40,7 +42,7 @@ The first phase will not build the full application. It will establish whether t
 
 ## POC success criteria
 
-Phase 0 is successful if one corridor can be analyzed with enough data quality to generate repeatable, engineering-useful findings while clearly documenting uncertainty and missing data.
+Phase 0 is successful if the selected four-road pilot network can be reduced to reliable road/segment-level observations and can generate repeatable, engineering-useful findings while clearly documenting uncertainty and missing data. Full coverage of every road is not required; the decision gate is whether the core network produces enough usable signal to justify P1.
 
 ## Next decision gate
 
