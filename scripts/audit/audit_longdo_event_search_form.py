@@ -126,6 +126,52 @@ def snippets(text: str, tokens: tuple[str, ...] = TOKENS, radius: int = 500) -> 
     return out
 
 
+def audit_event_json() -> dict:
+    import datetime as dt
+    now = dt.datetime.now(dt.timezone.utc)
+    start = now - dt.timedelta(days=30)
+    params = {
+        "page": 1,
+        "name": "",
+        "creator": "",
+        "from": int(start.timestamp()),
+        "to": int((now + dt.timedelta(days=1)).timestamp()),
+        "ordered": "DESC",
+        "eventtype": 0,
+        "pagger": 1000,
+        "now": int(now.timestamp() * 1000),
+    }
+    url = "https://traffic.longdo.com/event.json?" + urllib.parse.urlencode(params)
+    raw = fetch_text(url, timeout=45)
+    parsed = json.loads(raw)
+    if isinstance(parsed, dict):
+        items = parsed.get("item")
+        if not isinstance(items, list):
+            items = parsed.get("items") if isinstance(parsed.get("items"), list) else []
+        return {
+            "url_without_empty_search_terms": (
+                "https://traffic.longdo.com/event.json?page=1&from=<unix>&to=<unix>"
+                "&ordered=DESC&eventtype=0&pagger=1000&now=<ms>"
+            ),
+            "top_level_type": "dict",
+            "top_level_keys": sorted(parsed.keys()),
+            "item_count": len(items),
+            "first_item_keys": sorted(items[0].keys()) if items and isinstance(items[0], dict) else [],
+            "first_item": items[0] if items else None,
+            "last_item": items[-1] if items else None,
+            "pagination_like_values": {
+                k: v
+                for k, v in parsed.items()
+                if k.lower() in {"page", "pages", "total", "count", "pagger", "num_rows", "totalpage", "total_page"}
+                or isinstance(v, (int, float))
+            },
+        }
+    return {
+        "top_level_type": type(parsed).__name__,
+        "sample": parsed[:2] if isinstance(parsed, list) else parsed,
+    }
+
+
 def main() -> int:
     body = fetch_text(URL)
     parser = PageParser()
@@ -164,6 +210,7 @@ def main() -> int:
         "inline_search_hits": snippets(inline),
         "same_origin_script_search_hits": script_audits,
         "html_search_hits": snippets(body),
+        "event_json_audit": audit_event_json(),
     }, ensure_ascii=False, indent=2))
     return 0
 
