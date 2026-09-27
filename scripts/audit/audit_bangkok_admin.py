@@ -1,114 +1,133 @@
 #!/usr/bin/env python3
-"""Audit Bangkok OSM administrative geometry before citywide expansion."""
+"""Audit official BMA 50-district dataset resources.
+
+This avoids relying on a single large Overpass administrative query. It reads
+CKAN package metadata and probes only lightweight JSON/KML/GML-style resources.
+"""
 
 from __future__ import annotations
 
 import json
-import urllib.error
 import urllib.parse
 import urllib.request
 
-ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+USER_AGENT = "bkk-mobility-intelligence-bangkok-audit/0.2"
+CKAN_ROOTS = [
+    "https://data.bangkok.go.th",
+    "https://data.go.th",
 ]
-USER_AGENT = "bkk-mobility-intelligence-bangkok-audit/0.1"
+PACKAGE_IDS = [
+    "bae2ce5a-5990-413b-ba86-9fcf28bdebcc",
+    "e537025b-1cf6-4c5b-8e46-c2e976f13283",
+    "district",
+]
 
 
-def fetch(query: str) -> tuple[dict, str]:
-    body = urllib.parse.urlencode({"data": query}).encode("utf-8")
+def fetch_json(url: str, timeout: float = 30.0) -> dict:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json,*/*;q=0.8",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8-sig", errors="replace"))
+
+
+def fetch_prefix(url: str, limit: int = 2000, timeout: float = 25.0) -> dict:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Range": f"bytes=0-{limit-1}",
+            "Accept": "*/*",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read(limit)
+        return {
+            "status": getattr(resp, "status", None),
+            "final_url": resp.geturl(),
+            "content_type": resp.headers.get("Content-Type"),
+            "content_length": resp.headers.get("Content-Length"),
+            "sample_prefix": raw.decode("utf-8", errors="replace")[:limit],
+        }
+
+
+def compact_resource(resource: dict) -> dict:
+    keys = (
+        "id", "name", "format", "mimetype", "url", "url_type",
+        "resource_type", "last_modified", "created",
+    )
+    return {k: resource.get(k) for k in keys if k in resource}
+
+
+def discover_package() -> tuple[dict, str, str]:
     errors = []
-    for endpoint in ENDPOINTS:
-        req = urllib.request.Request(
-            endpoint,
-            data=body,
-            headers={
-                "User-Agent": USER_AGENT,
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=80) as resp:
-                return json.loads(resp.read().decode("utf-8")), endpoint
-        except Exception as exc:
-            errors.append(f"{endpoint}: {type(exc).__name__}: {exc}")
+    for root in CKAN_ROOTS:
+        for package_id in PACKAGE_IDS:
+            url = (
+                root.rstrip("/")
+                + "/api/3/action/package_show?"
+                + urllib.parse.urlencode({"id": package_id})
+            )
+            try:
+                payload = fetch_json(url)
+                if payload.get("success") and isinstance(payload.get("result"), dict):
+                    return payload["result"], root, package_id
+            except Exception as exc:
+                errors.append(
+                    f"{url}: {type(exc).__name__}: {exc}"
+                )
     raise RuntimeError("; ".join(errors))
 
 
-def bbox_from_element(el: dict) -> dict | None:
-    bounds = el.get("bounds") or {}
-    keys = ("minlat", "minlon", "maxlat", "maxlon")
-    if not all(k in bounds for k in keys):
-        return None
-    return {
-        "min_lon": float(bounds["minlon"]),
-        "min_lat": float(bounds["minlat"]),
-        "max_lon": float(bounds["maxlon"]),
-        "max_lat": float(bounds["maxlat"]),
-    }
-
-
 def main() -> int:
-    province_q = """
-[out:json][timeout:60];
-relation["boundary"="administrative"]["ISO3166-2"="TH-10"];
-out tags bb;
-"""
-    province_doc, endpoint = fetch(province_q)
-    provinces = [x for x in province_doc.get("elements", []) if x.get("type") == "relation"]
-    if len(provinces) != 1:
-        raise RuntimeError(f"expected one Bangkok relation, got {len(provinces)}")
-    province = provinces[0]
-    bbox = bbox_from_element(province)
-    if not bbox:
-        raise RuntimeError("Bangkok relation has no bounds")
+    package, root, package_id = discover_package()
+    resources = [
+        compact_resource(x)
+        for x in package.get("resources") or []
+        if isinstance(x, dict)
+    ]
 
-    district_q = """
-[out:json][timeout:60];
-area["boundary"="administrative"]["ISO3166-2"="TH-10"]->.bkk;
-relation(area.bkk)["boundary"="administrative"]["admin_level"="6"];
-out tags bb;
-"""
-    districts_doc, district_endpoint = fetch(district_q)
-    districts = []
-    for el in districts_doc.get("elements", []):
-        if el.get("type") != "relation":
+    probes = []
+    for resource in package.get("resources") or []:
+        if not isinstance(resource, dict):
             continue
-        tags = el.get("tags") or {}
-        name_th = tags.get("name:th") or tags.get("name")
-        name_en = tags.get("name:en")
-        districts.append({
-            "relation_id": el.get("id"),
-            "name_th": name_th,
-            "name_en": name_en,
-            "admin_level": tags.get("admin_level"),
-            "boundary": tags.get("boundary"),
-            "bbox": bbox_from_element(el),
-        })
-    districts.sort(key=lambda x: str(x.get("name_th") or ""))
+        fmt = str(resource.get("format") or resource.get("mimetype") or "").casefold()
+        url = resource.get("url")
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            continue
+        if not any(token in fmt for token in ("json", "geojson", "kml", "gml", "xml")):
+            continue
+        try:
+            probe = fetch_prefix(url)
+            probes.append({
+                "resource": compact_resource(resource),
+                "probe": probe,
+            })
+        except Exception as exc:
+            probes.append({
+                "resource": compact_resource(resource),
+                "error": f"{type(exc).__name__}: {exc}",
+            })
 
     result = {
-        "province": {
-            "relation_id": province.get("id"),
-            "name": (province.get("tags") or {}).get("name"),
-            "name_en": (province.get("tags") or {}).get("name:en"),
-            "iso3166_2": (province.get("tags") or {}).get("ISO3166-2"),
-            "admin_level": (province.get("tags") or {}).get("admin_level"),
-            "bbox_wgs84": bbox,
-        },
-        "district_count": len(districts),
-        "districts": districts,
-        "validation": {
-            "expected_district_count": 50,
-            "district_count_ok": len(districts) == 50,
-            "province_relation_unique": True,
-        },
-        "overpass_endpoint": endpoint,
-        "district_endpoint": district_endpoint,
+        "source": "BMA Open Data CKAN",
+        "ckan_root": root,
+        "package_id_used": package_id,
+        "dataset_id": package.get("id"),
+        "name": package.get("name"),
+        "title": package.get("title"),
+        "metadata_modified": package.get("metadata_modified"),
+        "license_title": package.get("license_title"),
+        "resource_count": len(resources),
+        "resources": resources,
+        "lightweight_resource_probes": probes,
+        "expected_district_count": 50,
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    if len(districts) != 50:
-        return 2
     return 0
 
 
