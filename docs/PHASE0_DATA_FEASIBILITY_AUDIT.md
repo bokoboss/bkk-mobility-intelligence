@@ -78,30 +78,39 @@ This is a critical implementation detail.
 
 ## iTIC probe format observations
 
-The published README describes daily CSV probe files with:
+The historical archive README describes daily CSV probe files with nine fields:
 
 `VehicleID,gpsvalid,lat,lon,timestamp,speed,heading,for_hire_light,engine_acc`
 
-Key points:
+However, a separate current public iTIC probe-format page documents an eight-field variant:
 
-- timestamp is GMT+7;
+`VehicleID,gpsvalid,lat,lon,timestamp,speed,passenger_lamp,engine_acc`
+
+This is treated as a **schema/version discrepancy that must be detected from the file itself**, not as an error to silently resolve. Phase 0 tooling therefore accepts both known variants and records the detected schema on every extracted row.
+
+Key points that are common or explicitly documented:
+
+- timestamp is local GMT+7 in the archive documentation;
 - speed is km/h;
-- heading is degrees `[0,360)` from north;
 - GPS validity is explicitly flagged;
+- the nine-field variant includes heading in degrees `[0,360)` from north;
 - inactive vehicles can have lower reporting frequency;
-- taxi for-hire status may help identify observations that should be filtered for certain travel-speed analyses.
+- taxi/passenger-lamp status can introduce fleet/sampling effects.
 
 ### Consequence for the POC
 
 Do **not** calculate corridor speed as a naïve mean of every probe point inside a buffer. At minimum, processing must include:
 
+- schema/version detection before analysis;
 - `gpsvalid == 1` filtering;
 - map/corridor matching;
-- direction/heading screening;
+- direction/heading screening **only when heading is actually present**;
 - stationary/off-network outlier treatment;
 - time binning;
 - vehicle/probe sampling bias checks;
 - adequate sample-count thresholds per time bin.
+
+The first probe extractor is intentionally a streaming local-archive tool: it reads a monthly `.tar.bz2` sequentially, filters date/GPS validity/bounding box, and writes a much smaller canonical CSV for QA before GeoParquet/DuckDB are introduced.
 
 ## Supporting data observations
 
