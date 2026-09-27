@@ -42,3 +42,19 @@ The MapLibre dashboard includes:
 
 Relative watch scores are within-Bangkok prioritization only and are not flood
 probabilities.
+
+### Visual hierarchy
+
+The Bangkok-wide dashboard no longer assigns dedicated colors, thicker lines,
+legend entries, filter priority, or card priority to the four original pilot
+roads. Their stable IDs remain for continuity only.
+
+Default road styling is now neutral and network-based:
+
+- Strategic roads;
+- Urban roads;
+- selected-road highlight;
+- analytical overlays such as incidents, flood watch and future traffic state.
+
+This prevents the original POC corridors from appearing more important than the
+rest of the Bangkok network.

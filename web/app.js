@@ -1,13 +1,6 @@
 (() => {
   "use strict";
 
-  const PRIORITY_COLORS = {
-    ram_inthra: "#4cc9f0",
-    prasert_manukitch: "#65d49a",
-    pradit_manutham: "#f0b55a",
-    nuan_chan: "#b89cff"
-  };
-
   const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
 
   const CLASS_LABELS = {
@@ -143,9 +136,15 @@
   }
 
   function roadColor(id) {
-    if (PRIORITY_COLORS[id]) return PRIORITY_COLORS[id];
-    if ((roadMeta(id).confirmed_incident_count || 0) > 0) return cssVar("--accent-2");
-    return cssVar("--subtle");
+    const tier = String(roadMeta(id).network_tier || "");
+    return tier === "STRATEGIC" ? cssVar("--road-strategic") : cssVar("--road-urban");
+  }
+
+  function incidentColor() {
+    if (activeWindow === "now") return cssVar("--danger");
+    if (activeWindow === "flood7d" || activeWindow === "flood30d" || activeWindow === "floodwatch") return "#0ea5e9";
+    if (activeWindow === "7d") return "#f59e0b";
+    return "#7c6cff";
   }
 
   function escapeHtml(value) {
@@ -211,9 +210,12 @@
     return "ตอนนี้";
   }
 
-  function priorityRoadIds() {
+  function sampledRoadIds() {
     return Object.entries(statusData?.roads || {})
-      .filter(([, road]) => road.priority)
+      .filter(([, road]) => Number(road?.traffic_state?.sample_count || 0) > 0)
+      .sort((a, b) =>
+        Number(b[1]?.traffic_state?.sample_count || 0) - Number(a[1]?.traffic_state?.sample_count || 0)
+      )
       .map(([id]) => id);
   }
 
@@ -376,11 +378,14 @@
     const roadCount = statusData.network_summary?.road_count || Object.keys(statusData.roads || {}).length;
     $("incidentBreakdown").textContent = "ครอบคลุม " + roadCount + " ถนนหลัก · มีเหตุบน " + activeRoads + " ถนน";
 
-    const speedReady = statusData.source_status.segment_speed !== "UNAVAILABLE";
-    $("speedValue").textContent = speedReady ? "ทดลอง" : "N/A";
-    $("speedStatus").textContent = speedReady
-      ? "มี experimental speed source"
-      : "รอ provider/API access สำหรับความเร็วรายช่วงถนน";
+    const speed = statusData.source_details?.segment_speed || {};
+    const sampledRoads = Number(speed.sampled_road_count || 0);
+    const totalSpeedRoads = Number(speed.road_count || roadCount);
+    const coveragePct = totalSpeedRoads ? sampledRoads / totalSpeedRoads * 100 : 0;
+    $("speedValue").textContent = sampledRoads > 0 ? sampledRoads + " ถนน" : "N/A";
+    $("speedStatus").textContent = sampledRoads > 0
+      ? "experimental samples · coverage " + coveragePct.toFixed(1) + "%"
+      : "ยังไม่มี speed sample ที่ใช้ได้ · " + (speed.access_state || statusData.source_status.segment_speed || "provider access pending");
 
     const event = statusData.source_details?.events || {};
     const age = event.latest_event_age_hours;
@@ -397,22 +402,22 @@
   }
 
   function renderLegend() {
-    const priority = priorityRoadIds().map((id) =>
-      '<div class="legend-item"><span class="legend-line" style="background:' + roadColor(id) + '"></span>'
-      + escapeHtml(roadLabel(id).replace("ถนน", "")) + "</div>"
-    );
-    priority.push('<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--subtle") + '"></span>ถนนหลักอื่น</div>');
+    const items = [
+      '<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--road-strategic") + '"></span>Strategic road</div>',
+      '<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--road-urban") + '"></span>Urban road</div>',
+      '<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--road-selected") + ';height:4px"></span>ถนนที่เลือก</div>'
+    ];
     if (activeWindow === "flood7d" || activeWindow === "flood30d" || activeWindow === "floodwatch") {
-      priority.push('<div class="legend-item"><span class="legend-dot" style="background:#0ea5e9"></span>Flood episode</div>');
-      priority.push('<div class="legend-item"><span class="legend-dot" style="background:transparent;border:2px solid #38bdf8"></span>Recurring flood hotspot</div>');
+      items.push('<div class="legend-item"><span class="legend-dot" style="background:#0ea5e9"></span>Flood episode</div>');
+      items.push('<div class="legend-item"><span class="legend-dot" style="background:transparent;border:2px solid #38bdf8"></span>Recurring flood hotspot</div>');
       if (activeWindow === "floodwatch") {
-        priority.push('<div class="legend-item"><span class="legend-dot" style="background:#5b21b6"></span>TMD next-24h forecast</div>');
-        priority.push('<div class="legend-item">Road watch = relative, not probability</div>');
+        items.push('<div class="legend-item"><span class="legend-dot" style="background:#5b21b6"></span>TMD next-24h forecast</div>');
+        items.push('<div class="legend-item">Road watch = relative, not probability</div>');
       }
     } else {
-      priority.push('<div class="legend-item"><span class="legend-dot"></span>เหตุที่ยืนยันได้</div>');
+      items.push('<div class="legend-item"><span class="legend-dot" style="background:' + incidentColor() + '"></span>เหตุที่ยืนยันได้</div>');
     }
-    $("mapLegend").innerHTML = priority.join("");
+    $("mapLegend").innerHTML = items.join("");
   }
 
   function incidentGeoJSON() {
@@ -447,12 +452,7 @@
     if (source) source.setData(incidentGeoJSON());
 
     if (map.getLayer("confirmed-incidents")) {
-      const color = activeWindow === "now"
-        ? cssVar("--danger")
-        : (activeWindow === "flood7d" || activeWindow === "flood30d" || activeWindow === "floodwatch")
-          ? "#0ea5e9"
-          : activeWindow === "7d" ? "#f59e0b" : "#7c6cff";
-      map.setPaintProperty("confirmed-incidents", "circle-color", color);
+      map.setPaintProperty("confirmed-incidents", "circle-color", incidentColor());
       map.setPaintProperty("confirmed-incidents", "circle-opacity", activeWindow === "now" ? 0.94 : 0.72);
       map.setPaintProperty(
         "confirmed-incidents",
@@ -542,12 +542,10 @@
 
   function roadColorExpression() {
     return [
-      "match", ["get", "road_id"],
-      "ram_inthra", PRIORITY_COLORS.ram_inthra,
-      "prasert_manukitch", PRIORITY_COLORS.prasert_manukitch,
-      "pradit_manutham", PRIORITY_COLORS.pradit_manutham,
-      "nuan_chan", PRIORITY_COLORS.nuan_chan,
-      cssVar("--subtle")
+      "match", ["get", "network_tier"],
+      "STRATEGIC", cssVar("--road-strategic"),
+      "URBAN", cssVar("--road-urban"),
+      cssVar("--road-urban")
     ];
   }
 
@@ -621,7 +619,7 @@
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": roadColorExpression(),
-        "line-width": ["case", ["==", ["get", "priority"], true], 4.6, 2.4],
+        "line-width": ["match", ["get", "network_tier"], "STRATEGIC", 2.8, "URBAN", 1.6, 1.6],
         "line-opacity": 0.72
       }
     });
@@ -633,7 +631,7 @@
       filter: ["==", ["get", "road_id"], "__none__"],
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        "line-color": cssVar("--text"),
+        "line-color": cssVar("--road-selected"),
         "line-width": 7.5,
         "line-opacity": 0.95
       }
@@ -830,8 +828,10 @@
   }
 
   function filterRoadIds() {
-    const ids = priorityRoadIds().filter(roadInSelectedDistrict);
-    incidentRoadIds().forEach((id) => { if (roadInSelectedDistrict(id) && !ids.includes(id)) ids.push(id); });
+    const ids = incidentRoadIds().filter(roadInSelectedDistrict).slice(0, 12);
+    sampledRoadIds().forEach((id) => {
+      if (ids.length < 12 && roadInSelectedDistrict(id) && !ids.includes(id)) ids.push(id);
+    });
     if (selectedRoad !== "all" && !ids.includes(selectedRoad)) ids.push(selectedRoad);
     return ids;
   }
@@ -865,7 +865,7 @@
       const refs = (item.event_route_refs || []).length ? " · ทล." + item.event_route_refs.join(", ") : "";
       return '<article class="incident-item">'
         + '<div class="incident-item-top">'
-        + '<span class="incident-marker" style="background:' + roadColor(item.road_id) + '"></span>'
+        + '<span class="incident-marker" style="background:' + incidentColor() + '"></span>'
         + '<div class="incident-title">' + escapeHtml(item.title || "เหตุการณ์") + "</div>"
         + "</div>"
         + '<div class="incident-meta">' + escapeHtml(roadLabel(item.road_id))
@@ -877,9 +877,10 @@
   }
 
   function cardRoadIds() {
-    const priority = priorityRoadIds().filter(roadInSelectedDistrict);
-    const active = incidentRoadIds().filter((id) => roadInSelectedDistrict(id) && !priority.includes(id));
-    const ids = [...priority, ...active.slice(0, 8)];
+    const ids = incidentRoadIds().filter(roadInSelectedDistrict).slice(0, 12);
+    sampledRoadIds().forEach((id) => {
+      if (ids.length < 12 && roadInSelectedDistrict(id) && !ids.includes(id)) ids.push(id);
+    });
     if (selectedRoad !== "all" && !ids.includes(selectedRoad)) ids.push(selectedRoad);
     return ids;
   }
@@ -905,7 +906,7 @@
         + '" style="--road-color:' + roadColor(id) + '">'
         + '<div class="road-card-line"></div>'
         + "<h3>" + escapeHtml(road.display_name || id) + "</h3>"
-        + '<div class="road-th">' + (road.priority ? "FOCUS ROAD" : (road.network_tier || "BANGKOK NETWORK")) + "</div>"
+        + '<div class="road-th">' + escapeHtml((road.network_tier || "BANGKOK") + " NETWORK") + "</div>"
         + '<div class="road-card-stats">'
         + '<div class="road-stat"><span>NOW INCIDENTS</span><strong>' + incidentsNow + "</strong></div>"
         + '<div class="road-stat"><span>LAST 7 DAYS</span><strong>' + incidents7d + "</strong></div>"
@@ -955,7 +956,7 @@
         "circle-opacity",
         ["case", ["==", ["get", "road_id"], selectedRoad], activeWindow === "now" ? 0.98 : 0.82, 0.14]
       );
-      map.setPaintProperty("road-selected", "line-color", roadColor(selectedRoad));
+      map.setPaintProperty("road-selected", "line-color", cssVar("--road-selected"));
     }
 
     if (map.getLayer("flood-watch-roads")) {
@@ -984,7 +985,7 @@
       map.setPaintProperty("road-network", "line-color", roadColorExpression());
       updateIncidentMapSource();
       if (selectedRoad !== "all") {
-        map.setPaintProperty("road-selected", "line-color", roadColor(selectedRoad));
+        map.setPaintProperty("road-selected", "line-color", cssVar("--road-selected"));
       }
     }
     if (map) setTimeout(() => map.resize(), 0);
