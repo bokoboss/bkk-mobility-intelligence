@@ -30,6 +30,8 @@ def main() -> int:
                 "study_area_event_count", audit.get("study_area_record_count")
             ),
             "latest_event_start": audit.get("latest_event_start"),
+            "latest_event_age_hours": audit.get("latest_event_start_age_hours_at_retrieval"),
+            "payload_format": audit.get("format"),
             "parse_error": audit.get("parse_error"),
         }
     print(json.dumps(out, ensure_ascii=False, indent=2))
