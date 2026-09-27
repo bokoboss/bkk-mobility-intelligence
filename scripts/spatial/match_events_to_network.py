@@ -100,18 +100,24 @@ def event_route_refs(event: dict[str, Any]) -> set[str]:
     return refs
 
 
+def is_explicit_road_alias(alias: str) -> bool:
+    text = re.sub(r"\s+", " ", alias.strip().casefold())
+    return text.startswith("ถนน") or text.endswith(" road")
+
+
 def candidate_title_support(
     event: dict[str, Any], candidate: dict[str, Any]
 ) -> bool:
     title = event_title(event)
-    configured = set(event.get("road_title_matches") or [])
-    if candidate["road_id"] in configured:
-        return True
 
-    aliases = candidate.get("aliases") or []
-    for alias in aliases:
-        cleaned = clean_alias(str(alias))
-        if len(cleaned) >= 4 and cleaned in title:
+    # For dynamic road confirmation, require an explicit full road name such as
+    # "ถนนนวมินทร์" / "Ram Inthra Road". Bare aliases such as "นวมินทร์"
+    # are deliberately ignored because they also appear in soi names.
+    for alias in candidate.get("aliases") or []:
+        raw = re.sub(r"\s+", " ", str(alias).strip().casefold())
+        if not is_explicit_road_alias(raw):
+            continue
+        if len(raw) >= 5 and raw in title:
             return True
     return False
 

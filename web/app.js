@@ -147,10 +147,17 @@
     $("mapLegend").innerHTML = priority.join("");
   }
 
+  function featureLines(feature) {
+    const geom = feature.geometry || {};
+    if (geom.type === "LineString") return [geom.coordinates || []];
+    if (geom.type === "MultiLineString") return geom.coordinates || [];
+    return [];
+  }
+
   function computeProjection() {
     const coords = [];
     (networkData.features || []).forEach((f) => {
-      ((f.geometry || {}).coordinates || []).forEach((p) => coords.push(p));
+      featureLines(f).forEach((line) => line.forEach((p) => coords.push(p)));
     });
     if (!coords.length) return null;
     const lons = coords.map((p) => Number(p[0]));
@@ -178,6 +185,13 @@
     }).join(" ");
   }
 
+  function pathFromFeature(feature) {
+    return featureLines(feature)
+      .filter((line) => line.length >= 2)
+      .map((line) => pathFromCoords(line))
+      .join(" ");
+  }
+
   function renderMap() {
     const svg = $("networkMap");
     svg.innerHTML = "";
@@ -192,11 +206,11 @@
 
     (networkData.features || []).forEach((feature) => {
       const roadId = feature.properties?.road_id;
-      const coords = feature.geometry?.coordinates || [];
-      if (!roadId || coords.length < 2) return;
+      const lines = featureLines(feature);
+      if (!roadId || !lines.length) return;
       const meta = roadMeta(roadId);
       const path = svgEl("path", {
-        d: pathFromCoords(coords),
+        d: pathFromFeature(feature),
         class: "network-road" + (meta.priority ? " is-priority" : ""),
         "data-road": roadId,
         stroke: roadColor(roadId)
@@ -205,7 +219,7 @@
       roadGroup.appendChild(path);
       if (meta.priority) {
         priorityBuckets[roadId] ||= [];
-        priorityBuckets[roadId].push(...coords);
+        lines.forEach((line) => priorityBuckets[roadId].push(...line));
       }
     });
 

@@ -48,6 +48,21 @@ class RoadEvidenceTests(unittest.TestCase):
         self.assertTrue(out["network_confirmed"])
         self.assertTrue(out["title_support"])
 
+
+    def test_soi_name_does_not_confirm_main_road(self):
+        event = {"title": "น้ำท่วม ซอยนวมินทร์ 38"}
+        candidate = {
+            "road_id": "osm_abc",
+            "display_name": "ถนนนวมินทร์",
+            "distance_m": 20.0,
+            "aliases": ["ถนนนวมินทร์", "นวมินทร์"],
+            "route_refs": [],
+        }
+        out = match.classify(event, [candidate], 80, 150)
+        self.assertFalse(out["network_confirmed"])
+        self.assertFalse(out["title_support"])
+        self.assertEqual(out["network_match_class"], "GEOMETRY_ONLY_CANDIDATE")
+
     def test_geometry_without_identity_is_candidate(self):
         event = {"title": "น้ำท่วม ถนนแจ้งวัฒนะ", "road_title_matches": []}
         candidate = {
