@@ -142,8 +142,8 @@ def build_query(config: dict[str, Any], bbox: dict[str, float] | None = None) ->
     return f"""[out:json][timeout:25][maxsize:268435456];
 (
   way["highway"~"{cls}"]["name"]({box});
-  way["highway"~"{cls}][!"name"]["name:th"]({box});
-  way["highway"~"{cls}][!"name"]["name:en"]({box});
+  way["highway"~"{cls}"][!"name"]["name:th"]({box});
+  way["highway"~"{cls}"][!"name"]["name:en"]({box});
 );
 out tags geom qt;"""
 
