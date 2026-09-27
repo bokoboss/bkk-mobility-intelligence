@@ -77,3 +77,27 @@ The expanded area is accepted only if the live smoke run shows:
 - no obvious local-street explosion;
 - incident confirmation remains selective rather than turning every nearby
   event into a road-level incident.
+
+
+## Validation result — 2026-09-27
+
+Expanded Pilot v1 passed the live smoke gate after two QA tightening passes.
+
+Validated configuration:
+
+- analytical envelope: `100.57–100.79 E / 13.755–13.93 N`;
+- 4 priority roads retained;
+- 60 dynamically discovered major roads;
+- **64 total road identities**;
+- analytical OSM geometry: 2,179 source way fragments;
+- web render geometry: **64 MultiLineString features / ~413 KB**;
+- latest live iTIC records inside the extraction envelope: 78;
+- confirmed incident clustering uses explicit road names / route refs;
+- soi-name false positives are rejected as main-road confirmation;
+- highway route-segment records with the same segment title are clustered as one segment event;
+- validated latest build: **25 distinct confirmed incidents across 15 roads**.
+
+The expanded area is therefore accepted for the next POC stage.
+
+Segment-level traffic speed remains a separate unresolved provider-access
+dependency and is not inferred from incidents or the Bangkok Traffic Index.
