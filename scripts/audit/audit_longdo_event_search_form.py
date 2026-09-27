@@ -102,6 +102,16 @@ def fetch_text(url: str, timeout: float = 30.0) -> str:
         return resp.read().decode("utf-8", errors="replace")
 
 
+def extract_function(text: str, name: str, max_chars: int = 8000) -> str | None:
+    marker = f"function {name}("
+    start = text.find(marker)
+    if start < 0:
+        return None
+    next_func = text.find("\nfunction ", start + len(marker))
+    end = next_func if next_func >= 0 else min(len(text), start + max_chars)
+    return re.sub(r"\s+", " ", text[start:min(end, start + max_chars)]).strip()
+
+
 def snippets(text: str, tokens: tuple[str, ...] = TOKENS, radius: int = 500) -> list[dict]:
     out: list[dict] = []
     lower = text.casefold()
@@ -136,10 +146,12 @@ def main() -> int:
             })
             continue
         hits = snippets(js)
-        if hits:
+        get_event = extract_function(js, "getEvent")
+        if hits or get_event:
             script_audits.append({
                 "url": absolute,
                 "hits": hits,
+                "getEvent_function": get_event,
             })
 
     inline = "\n".join(parser.inline_script_parts)
