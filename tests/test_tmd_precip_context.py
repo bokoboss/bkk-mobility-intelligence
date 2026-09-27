@@ -21,13 +21,25 @@ class TmdContextTests(unittest.TestCase):
         '''
         self.assertEqual(tmd.choose_init_time(html), "2026092706")
 
-    def test_choose_precip_file(self):
+    def test_discover_named_products(self):
         files = [
-            {"filename": "t2m.d02.2026092706.csv"},
-            {"filename": "prec1hr.d02.2026092706.csv"},
+            {
+                "filename": "p24h.d02.2026092700.csv",
+                "format": "CSV",
+                "domain_code": "d02",
+                "url": "/static/csv/2026092700/p24h.d02.2026092700.csv",
+            },
+            {
+                "filename": "p1h.d02.2026092700.csv",
+                "format": "CSV",
+                "domain_code": "d02",
+                "url": "/static/csv/2026092700/p1h.d02.2026092700.csv",
+            },
         ]
-        item = tmd.choose_precip_file(files)
-        self.assertEqual(item["filename"], "prec1hr.d02.2026092706.csv")
+        products = tmd.discover_products(files)
+        self.assertIn("p24h_d02_csv", products)
+        self.assertIn("p1h_d02_csv", products)
+        self.assertTrue(products["p24h_d02_csv"]["download_url"].startswith("https://"))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Build descriptive flood/rain intelligence from confirmed recent event episodes."""
+"""Build Flood / Rain Intelligence v0.2.
+
+Combines:
+- confirmed Longdo flood/rain event episodes;
+- recurring flood hotspots;
+- descriptive reported-rain→flood association;
+- TMD 3-km next-24h precipitation forecast sampling;
+- HII rain/water station registry;
+- transparent relative road watch profiles.
+
+The road watch index is relative within this study area and is NOT flood
+probability, a hydraulic model, or a safety rating.
+"""
 
 from __future__ import annotations
 
@@ -30,6 +42,16 @@ def parse_args() -> argparse.Namespace:
         default=Path("data/raw/current_context/tmd_precip_context.json"),
     )
     p.add_argument(
+        "--tmd-grid",
+        type=Path,
+        default=Path("data/processed/flood/tmd_precip_grid_sample.json"),
+    )
+    p.add_argument(
+        "--hii-registry",
+        type=Path,
+        default=Path("data/processed/flood/hii_station_registry.json"),
+    )
+    p.add_argument(
         "--output",
         type=Path,
         default=Path("data/processed/flood/flood_intelligence.json"),
@@ -37,7 +59,9 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def load(path: Path) -> Any:
+def load(path: Path, fallback: Any = None) -> Any:
+    if not path.exists():
+        return fallback
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -79,6 +103,24 @@ def percentile(values: list[float], p: float) -> float | None:
     return xs[lo] * (hi - pos) + xs[hi] * (pos - lo)
 
 
+def percentile_rank(value: float, values: list[float]) -> float:
+    if not values:
+        return 0.0
+    less = sum(1 for x in values if x < value)
+    equal = sum(1 for x in values if x == value)
+    return round(100.0 * (less + 0.5 * equal) / len(values), 1)
+
+
+def watch_class(index: float | None) -> str:
+    if index is None:
+        return "NO_FORECAST_PROFILE"
+    if index >= 75:
+        return "HIGH_RELATIVE_WATCH"
+    if index >= 50:
+        return "ELEVATED_RELATIVE_WATCH"
+    return "LOWER_RELATIVE_WATCH"
+
+
 def window(history: dict[str, Any], key: str) -> list[dict[str, Any]]:
     return history["windows"][key]["clusters"]
 
@@ -99,7 +141,6 @@ def ranked_flood_roads(history: dict[str, Any]) -> list[dict[str, Any]]:
             "road_name": None,
         }
     )
-
     for item in flood30:
         road_id = item["road_id"]
         row = by_road[road_id]
@@ -110,7 +151,6 @@ def ranked_flood_roads(history: dict[str, Any]) -> list[dict[str, Any]]:
             row["days"].add(started.date().isoformat())
             current = row["latest"]
             row["latest"] = max(current, started.isoformat()) if current else started.isoformat()
-
     for item in flood7:
         by_road[item["road_id"]]["flood_7d"] += 1
 
@@ -136,10 +176,7 @@ def ranked_flood_roads(history: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
-def build_hotspots(
-    history: dict[str, Any],
-    radius_km: float = 0.30,
-) -> list[dict[str, Any]]:
+def build_hotspots(history: dict[str, Any], radius_km: float = 0.30) -> list[dict[str, Any]]:
     flood30 = typed(window(history, "30d"), FLOOD_TYPE)
     flood7_ids = {x["cluster_id"] for x in typed(window(history, "7d"), FLOOD_TYPE)}
     groups: list[dict[str, Any]] = []
@@ -193,7 +230,6 @@ def build_hotspots(
                 "radius_rule_m": round(radius_km * 1000),
             }
         )
-
     hotspots.sort(
         key=lambda x: (
             -x["distinct_flood_days_30d"],
@@ -260,11 +296,7 @@ def build_associations(
     return pairs
 
 
-def association_summary(
-    history: dict[str, Any],
-    pairs: list[dict[str, Any]],
-    window_key: str,
-) -> dict[str, Any]:
+def association_summary(history: dict[str, Any], pairs: list[dict[str, Any]], window_key: str) -> dict[str, Any]:
     floods = typed(window(history, window_key), FLOOD_TYPE)
     ids = {x["cluster_id"] for x in floods}
     selected = [x for x in pairs if x["flood_cluster_id"] in ids]
@@ -276,22 +308,92 @@ def association_summary(
             round(len(selected) * 100 / len(floods), 1) if floods else 0.0
         ),
         "same_road_associations": sum(1 for x in selected if x["same_road"]),
-        "median_lag_minutes": (
-            round(statistics.median(lags), 1) if lags else None
-        ),
-        "p25_lag_minutes": (
-            round(percentile(lags, 0.25), 1) if lags else None
-        ),
-        "p75_lag_minutes": (
-            round(percentile(lags, 0.75), 1) if lags else None
-        ),
+        "median_lag_minutes": round(statistics.median(lags), 1) if lags else None,
+        "p25_lag_minutes": round(percentile(lags, 0.25), 1) if lags else None,
+        "p75_lag_minutes": round(percentile(lags, 0.75), 1) if lags else None,
     }
+
+
+def build_road_watch_profiles(
+    roads: list[dict[str, Any]],
+    hotspots: list[dict[str, Any]],
+    pairs: list[dict[str, Any]],
+    tmd_grid: dict[str, Any],
+) -> list[dict[str, Any]]:
+    observed = {x["road_id"]: x for x in roads}
+    hotspot_counts: dict[str, int] = defaultdict(int)
+    for item in hotspots:
+        hotspot_counts[item["road_id"]] += 1
+    association_counts: dict[str, int] = defaultdict(int)
+    for item in pairs:
+        association_counts[item["road_id"]] += 1
+
+    forecast_rows = tmd_grid.get("road_forecast") or []
+    forecast = {x["road_id"]: x for x in forecast_rows}
+    road_ids = sorted(set(forecast) | set(observed))
+
+    recurrence_values = [
+        float(observed.get(road_id, {}).get("flood_30d", 0))
+        for road_id in road_ids
+    ]
+    precip_values = [
+        float(forecast.get(road_id, {}).get("next_24h_max_mm", 0))
+        for road_id in road_ids
+        if road_id in forecast
+    ]
+
+    profiles = []
+    for road_id in road_ids:
+        obs = observed.get(road_id, {})
+        fc = forecast.get(road_id)
+        flood_count = float(obs.get("flood_30d", 0))
+        recurrence_pct = percentile_rank(flood_count, recurrence_values)
+        forecast_pct = (
+            percentile_rank(float(fc.get("next_24h_max_mm", 0)), precip_values)
+            if fc and precip_values
+            else None
+        )
+        index = (
+            round(0.70 * recurrence_pct + 0.30 * forecast_pct, 1)
+            if forecast_pct is not None
+            else None
+        )
+        profiles.append(
+            {
+                "road_id": road_id,
+                "road_name": (
+                    obs.get("road_name")
+                    or (fc or {}).get("road_name")
+                    or road_id
+                ),
+                "flood_30d": int(flood_count),
+                "flood_7d": int(obs.get("flood_7d", 0)),
+                "distinct_flood_days_30d": int(obs.get("distinct_flood_days_30d", 0)),
+                "hotspot_count_30d": int(hotspot_counts.get(road_id, 0)),
+                "reported_rain_associations_30d": int(association_counts.get(road_id, 0)),
+                "recurrence_percentile": recurrence_pct,
+                "tmd_next24_mean_mm": fc.get("next_24h_mean_mm") if fc else None,
+                "tmd_next24_p90_mm": fc.get("next_24h_p90_mm") if fc else None,
+                "tmd_next24_max_mm": fc.get("next_24h_max_mm") if fc else None,
+                "tmd_grid_cell_count": fc.get("grid_cell_count") if fc else None,
+                "forecast_precip_percentile": forecast_pct,
+                "relative_watch_index": index,
+                "relative_watch_class": watch_class(index),
+            }
+        )
+    profiles.sort(
+        key=lambda x: (
+            -(x["relative_watch_index"] if x["relative_watch_index"] is not None else -1),
+            -x["flood_30d"],
+            x["road_name"],
+        )
+    )
+    return profiles
 
 
 def main() -> int:
     args = parse_args()
     history = load(args.history)
-
     flood7 = typed(window(history, "7d"), FLOOD_TYPE)
     prior_flood7 = typed(window(history, "prior_7d"), FLOOD_TYPE)
     flood30 = typed(window(history, "30d"), FLOOD_TYPE)
@@ -309,16 +411,15 @@ def main() -> int:
             daily[started.date().isoformat()] += 1
     peak_day = max(daily.items(), key=lambda x: x[1]) if daily else (None, 0)
 
-    tmd_context = (
-        load(args.tmd_context)
-        if args.tmd_context.exists()
-        else {"status": "NOT_FETCHED"}
-    )
+    tmd_context = load(args.tmd_context, {"status": "NOT_FETCHED"})
+    tmd_grid = load(args.tmd_grid, {"status": "NOT_FETCHED", "grid_points": [], "road_forecast": []})
+    hii_registry = load(args.hii_registry, {"status": "NOT_FETCHED", "stations": []})
+    profiles = build_road_watch_profiles(roads, hotspots, pairs, tmd_grid)
 
     result = {
-        "schema": "bkk-mobility-flood-v0.1",
+        "schema": "bkk-mobility-flood-v0.2",
         "anchor_time_ict": history["anchor_time_ict"],
-        "scope": "confirmed-road reported flood/rain episodes in Expanded V1",
+        "scope": "Expanded V1 road flood intelligence + relative forecast watch",
         "metrics": {
             "flood_7d": len(flood7),
             "flood_prior_7d": len(prior_flood7),
@@ -327,14 +428,8 @@ def main() -> int:
             "rain_30d": len(rain30),
             "flood_7d_change": len(flood7) - len(prior_flood7),
             "flood_7d_change_pct": (
-                round(
-                    (len(flood7) - len(prior_flood7))
-                    * 100
-                    / len(prior_flood7),
-                    1,
-                )
-                if prior_flood7
-                else None
+                round((len(flood7) - len(prior_flood7)) * 100 / len(prior_flood7), 1)
+                if prior_flood7 else None
             ),
             "roads_with_flood_30d": len({x["road_id"] for x in flood30}),
             "recurring_hotspots_30d": len(hotspots),
@@ -347,45 +442,48 @@ def main() -> int:
                 "max_distance_km": 5,
                 "preference": "same road, then nearest spatial match, then shorter lag",
             },
-            "interpretation": (
-                "descriptive temporal-spatial association only; "
-                "not causal attribution"
-            ),
+            "interpretation": "descriptive temporal-spatial association only; not causal attribution",
             "7d": association_summary(history, pairs, "7d"),
             "30d": association_summary(history, pairs, "30d"),
             "pairs_30d": pairs,
         },
         "top_flood_roads_30d": roads[:20],
         "hotspots_30d": hotspots[:100],
+        "tmd_forecast": tmd_grid,
+        "hii_station_registry": hii_registry,
+        "road_watch": {
+            "formula": {
+                "recurrence_component": "70% of percentile rank of 30-day reported flood episode count among study roads",
+                "forecast_component": "30% of percentile rank of TMD next-24h road maximum precipitation among study roads",
+                "index": "0.70 * recurrence_percentile + 0.30 * forecast_precip_percentile",
+            },
+            "interpretation": "relative within the study area; not flood probability or hydraulic risk",
+            "profiles": profiles,
+            "top_profiles": profiles[:15],
+        },
         "sources": {
             "longdo_events": {
                 "status": "READY",
                 "use": "reported rain/flood episodes + confirmed road matching",
             },
             "tmd_nwp": tmd_context,
-            "bma_street_flood": {
-                "status": "OFFICIAL_SOURCE_DISCOVERED_NOT_MACHINE_INGESTED",
-                "url": "https://weather.bangkok.go.th/flood/",
-                "reason": (
-                    "automated runner connection reset; "
-                    "no stable machine contract validated yet"
-                ),
+            "hii": {
+                "status": hii_registry.get("status"),
+                "use": "rain/water station registry; current values only when archive is actually published",
+                "current_observation_available": hii_registry.get("current_observation_available"),
             },
-            "bma_rain": {
+            "bma_direct": {
                 "status": "OFFICIAL_SOURCE_DISCOVERED_NOT_MACHINE_INGESTED",
-                "url": "https://weather.bangkok.go.th/rain",
-                "reason": (
-                    "automated runner connection reset; "
-                    "no stable machine contract validated yet"
-                ),
+                "reason": "weather.bangkok.go.th reset automated runner connections during validation",
             },
         },
         "limitations": [
             "Longdo rain/flood events are reported observations, not complete sensor coverage.",
             "Rain-to-flood association is not a causal estimate.",
-            "Flood event stop times may be administrative/reporting times and are not treated as physical drainage recovery.",
-            "BMA measured street-water and rain-gauge feeds are not yet ingested automatically.",
-            "TMD NWP metadata is context only until precipitation grid values are spatially sampled.",
+            "TMD precipitation is numerical forecast output, not measured rainfall.",
+            "The relative road watch index is not flood probability, depth, or hydraulic capacity.",
+            "HII current-month rainfall values are not shown when the static archive has not published current CSV files.",
+            "Flood event stop times are not treated as physical drainage recovery.",
         ],
     }
 
@@ -397,13 +495,15 @@ def main() -> int:
     print(
         json.dumps(
             {
+                "schema": result["schema"],
                 "flood_7d": len(flood7),
-                "flood_prior_7d": len(prior_flood7),
                 "flood_30d": len(flood30),
-                "rain_7d": len(rain7),
                 "hotspots_30d": len(hotspots),
-                "rain_flood_7d": result["rain_flood_association"]["7d"],
-                "top_flood_roads": roads[:5],
+                "tmd_status": tmd_grid.get("status"),
+                "tmd_grid_summary": tmd_grid.get("grid_summary"),
+                "hii_status": hii_registry.get("status"),
+                "hii_rain_station_count": hii_registry.get("rain_station_count"),
+                "top_road_watch": profiles[:5],
                 "output": str(args.output),
             },
             ensure_ascii=False,

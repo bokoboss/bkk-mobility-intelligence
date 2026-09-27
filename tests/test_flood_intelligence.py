@@ -60,5 +60,41 @@ class FloodIntelligenceTests(unittest.TestCase):
         self.assertEqual(hotspots[0]["distinct_flood_days_30d"], 2)
 
 
+    def test_relative_watch_profile(self):
+        roads = [
+            {
+                "road_id": "r1", "road_name": "R1", "flood_30d": 10,
+                "flood_7d": 4, "distinct_flood_days_30d": 3,
+            },
+            {
+                "road_id": "r2", "road_name": "R2", "flood_30d": 0,
+                "flood_7d": 0, "distinct_flood_days_30d": 0,
+            },
+        ]
+        tmd_grid = {
+            "road_forecast": [
+                {
+                    "road_id": "r1", "road_name": "R1", "grid_cell_count": 2,
+                    "next_24h_mean_mm": 30, "next_24h_p90_mm": 40,
+                    "next_24h_max_mm": 45,
+                },
+                {
+                    "road_id": "r2", "road_name": "R2", "grid_cell_count": 2,
+                    "next_24h_mean_mm": 5, "next_24h_p90_mm": 6,
+                    "next_24h_max_mm": 7,
+                },
+            ]
+        }
+        profiles = flood.build_road_watch_profiles(roads, [], [], tmd_grid)
+        self.assertEqual(profiles[0]["road_id"], "r1")
+        self.assertGreater(
+            profiles[0]["relative_watch_index"],
+            profiles[1]["relative_watch_index"],
+        )
+        self.assertIn(
+            profiles[0]["relative_watch_class"],
+            {"HIGH_RELATIVE_WATCH", "ELEVATED_RELATIVE_WATCH"},
+        )
+
 if __name__ == "__main__":
     unittest.main()

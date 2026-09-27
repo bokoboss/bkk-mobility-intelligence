@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Fetch machine-readable TMD NWP precipitation dataset metadata.
+"""Discover current TMD NWP precipitation products for the Bangkok flood POC.
 
-This intentionally stops at dataset metadata for v0.1. It does not interpret
-forecast grid values as observed rainfall.
+The output distinguishes forecast model products from observed rainfall and
+publishes direct metadata/URLs for lightweight downstream sampling.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from typing import Any
 
 BASE = "https://hpc.tmd.go.th"
 DOWNLOAD_PAGE = BASE + "/download"
-USER_AGENT = "bkk-mobility-intelligence-tmd/0.1"
+USER_AGENT = "bkk-mobility-intelligence-tmd/0.2"
 
 
 class InitTimeParser(HTMLParser):
@@ -79,8 +79,6 @@ def choose_init_time(html: str) -> str | None:
     values = [x["value"] for x in parser.options]
     if values:
         return max(values)
-
-    # Defensive fallback for server-rendered option markup.
     candidates = re.findall(r'<option[^>]+value=["\'](\d{10})["\']', html)
     return max(candidates) if candidates else None
 
@@ -93,46 +91,56 @@ def scalar_metadata(item: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def choose_precip_file(files: list[dict[str, Any]]) -> dict[str, Any] | None:
-    ranked = []
-    for item in files:
-        hay = json.dumps(item, ensure_ascii=False).casefold()
-        score = 0
-        if "prec1hr" in hay:
-            score += 100
-        elif "prec" in hay:
-            score += 40
-        if "d02" in hay or "domain 2" in hay or "3km" in hay:
-            score += 20
-        if "csv" in hay:
-            score += 10
-        if score:
-            ranked.append((score, item))
-    ranked.sort(key=lambda x: -x[0])
-    return ranked[0][1] if ranked else None
+def product_key(item: dict[str, Any]) -> str | None:
+    filename = str(item.get("filename") or item.get("name") or "").casefold()
+    fmt = str(item.get("format") or "").casefold()
+    domain = str(item.get("domain_code") or item.get("domain") or "").casefold()
+
+    if ("d02" in domain or ".d02." in filename) and "csv" in fmt:
+        if filename.startswith("p24h.d02.") or "24-hour accumulated precipitation" in str(item.get("description") or "").casefold():
+            return "p24h_d02_csv"
+        if filename.startswith("p1h.d02.") or "1-hour precipitation" in str(item.get("description") or "").casefold():
+            return "p1h_d02_csv"
+    if ("d02" in domain or ".d02." in filename) and ("netcdf" in fmt or filename.endswith(".nc")):
+        if "prec1hr" in filename:
+            return "prec1hr_d02_netcdf"
+    return None
 
 
-def infer_download_url(init_time: str, item: dict[str, Any]) -> str | None:
+def absolute_url(item: dict[str, Any]) -> str | None:
     for key in ("download_url", "url", "href", "path"):
         value = item.get(key)
         if isinstance(value, str) and value.strip():
             return urllib.parse.urljoin(BASE, value.strip())
-    for key in ("filename", "file_name", "name"):
-        value = item.get(key)
-        if isinstance(value, str) and value.casefold().endswith(".csv"):
-            return f"{BASE}/static/csv/{init_time}/{value}"
     return None
+
+
+def discover_products(files: list[dict[str, Any]]) -> dict[str, Any]:
+    products: dict[str, Any] = {}
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        key = product_key(item)
+        if not key or key in products:
+            continue
+        products[key] = {
+            "metadata": scalar_metadata(item),
+            "download_url": absolute_url(item),
+        }
+    return products
 
 
 def main() -> int:
     args = parse_args()
     result: dict[str, Any] = {
+        "schema": "tmd-precip-context-v0.2",
         "provider": "Thai Meteorological Department NWP",
         "page_url": args.page,
         "api_contract": "/api/download-files?init_time=<YYYYMMDDHH>",
         "status": "UNAVAILABLE",
-        "use": "forecast precipitation dataset metadata only",
+        "use": "forecast precipitation grid products",
         "not_observed_rainfall": True,
+        "source_is_forecast": True,
     }
 
     try:
@@ -149,7 +157,7 @@ def main() -> int:
             payload = json.loads(fetch_text(api_url, args.timeout))
             files = payload.get("files") if isinstance(payload, dict) else None
             files = files if isinstance(files, list) else []
-            candidate = choose_precip_file(
+            products = discover_products(
                 [x for x in files if isinstance(x, dict)]
             )
             result.update(
@@ -161,12 +169,13 @@ def main() -> int:
                     if isinstance(payload, dict)
                     else None,
                     "file_count": len(files),
+                    "precip_products": products,
                 }
             )
-            if candidate:
-                result["status"] = "READY_METADATA"
-                result["precip_candidate"] = scalar_metadata(candidate)
-                result["download_url"] = infer_download_url(init_time, candidate)
+            if products.get("p24h_d02_csv", {}).get("download_url"):
+                result["status"] = "READY_FOR_GRID_SAMPLING"
+            elif products:
+                result["status"] = "READY_METADATA_ONLY"
             else:
                 result["status"] = "NO_PRECIP_DATASET_DISCOVERED"
     except Exception as exc:
@@ -178,7 +187,6 @@ def main() -> int:
         encoding="utf-8",
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    # Context enrichment is optional; do not block the main live dashboard.
     return 0
 
 

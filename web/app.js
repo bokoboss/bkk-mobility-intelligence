@@ -98,7 +98,7 @@
 
   function windowIncidents(windowId = activeWindow) {
     if (windowId === "now") return allIncidents();
-    if (windowId === "flood7d" || windowId === "flood30d") {
+    if (windowId === "flood7d" || windowId === "flood30d" || windowId === "floodwatch") {
       const base = windowId === "flood7d" ? "7d" : "30d";
       return [...(historyData?.windows?.[base]?.clusters || [])]
         .filter((item) => String(item.event_type || "") === "6")
@@ -117,6 +117,7 @@
     if (activeWindow === "30d") return "30 วันล่าสุด";
     if (activeWindow === "flood7d") return "น้ำท่วม · 7 วันล่าสุด";
     if (activeWindow === "flood30d") return "น้ำท่วม · 30 วันล่าสุด";
+    if (activeWindow === "floodwatch") return "Flood Watch · 30 วัน + TMD 24h";
     return "ตอนนี้";
   }
 
@@ -171,7 +172,7 @@
   }
 
   function setWindow(windowId) {
-    if (!["now", "7d", "30d", "flood7d", "flood30d"].includes(windowId)) return;
+    if (!["now", "7d", "30d", "flood7d", "flood30d", "floodwatch"].includes(windowId)) return;
     activeWindow = windowId;
     selectedRoad = "all";
     renderWindowControls();
@@ -182,6 +183,19 @@
     updateIncidentMapSource();
     updateFloodMapSource();
     updateMapSelection();
+  }
+
+  function watchClassLabel(value) {
+    if (value === "HIGH_RELATIVE_WATCH") return "HIGH REL.";
+    if (value === "ELEVATED_RELATIVE_WATCH") return "ELEVATED";
+    if (value === "LOWER_RELATIVE_WATCH") return "LOWER REL.";
+    return "NO DATA";
+  }
+
+  function watchBadgeClass(value) {
+    if (value === "HIGH_RELATIVE_WATCH") return "watch-badge--high";
+    if (value === "ELEVATED_RELATIVE_WATCH") return "watch-badge--elevated";
+    return "watch-badge--lower";
   }
 
   function renderFloodSummary() {
@@ -213,11 +227,33 @@
       + row.distinct_flood_days_30d + ' วัน</em></div>'
     ).join("") || '<div class="empty-list">ยังไม่พบจุดท่วมซ้ำ</div>';
 
-    const tmd = floodData.sources?.tmd_nwp || {};
-    $("tmdHydroStatus").textContent = tmd.status || "NOT FETCHED";
-    $("tmdHydroMeta").textContent = tmd.initial_time
-      ? "model cycle " + tmd.initial_time + " · metadata only"
-      : "forecast metadata context";
+    const tmd = floodData.tmd_forecast || {};
+    const tmdMeta = floodData.sources?.tmd_nwp || {};
+    const grid = tmd.grid_summary || {};
+    $("tmdHydroStatus").textContent = tmd.status || tmdMeta.status || "NOT FETCHED";
+    $("tmdHydroMeta").textContent = tmd.model_init_time_utc
+      ? "model " + formatThaiDate(tmd.model_init_time_utc) + " · valid " + formatThaiDate(tmd.forecast_valid_time_utc) + " · forecast"
+      : "3-km forecast grid · not observed rainfall";
+    $("tmdNext24Max").textContent = grid.max_mm == null ? "—" : Number(grid.max_mm).toFixed(1);
+    $("tmdGridSummary").textContent = grid.point_count == null
+      ? "TMD grid unavailable"
+      : "sampled " + grid.point_count + " cells · median " + Number(grid.median_mm || 0).toFixed(1)
+        + " mm · P90 " + Number(grid.p90_mm || 0).toFixed(1) + " mm";
+
+    const hii = floodData.hii_station_registry || {};
+    $("hiiHydroStatus").textContent = hii.status || "NOT FETCHED";
+    $("hiiHydroMeta").textContent = (hii.rain_station_count ?? 0) + " rain + "
+      + (hii.water_level_station_count ?? 0) + " water-level stations in bbox";
+    $("hiiRegistrySummary").textContent = (hii.rain_station_count ?? 0) + " rain station · "
+      + (hii.water_level_station_count ?? 0) + " water-level stations · current-month CSV "
+      + (hii.current_month_csv_count ?? 0);
+
+    $("floodWatchRoads").innerHTML = (floodData.road_watch?.top_profiles || []).slice(0, 10).map((row) =>
+      '<div class="watch-road-row"><span>' + escapeHtml(row.road_name)
+      + '</span><strong>' + (row.relative_watch_index == null ? "—" : Number(row.relative_watch_index).toFixed(1))
+      + '</strong><em>' + row.flood_30d + ' flood</em><i class="watch-badge '
+      + watchBadgeClass(row.relative_watch_class) + '">' + watchClassLabel(row.relative_watch_class) + '</i></div>'
+    ).join("") || '<div class="empty-list">ยังไม่มี road watch profile</div>';
   }
 
   function renderMetrics() {
@@ -261,9 +297,13 @@
       + escapeHtml(roadLabel(id).replace("ถนน", "")) + "</div>"
     );
     priority.push('<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--subtle") + '"></span>ถนนหลักอื่น</div>');
-    if (activeWindow === "flood7d" || activeWindow === "flood30d") {
+    if (activeWindow === "flood7d" || activeWindow === "flood30d" || activeWindow === "floodwatch") {
       priority.push('<div class="legend-item"><span class="legend-dot" style="background:#0ea5e9"></span>Flood episode</div>');
       priority.push('<div class="legend-item"><span class="legend-dot" style="background:transparent;border:2px solid #38bdf8"></span>Recurring flood hotspot</div>');
+      if (activeWindow === "floodwatch") {
+        priority.push('<div class="legend-item"><span class="legend-dot" style="background:#5b21b6"></span>TMD next-24h forecast</div>');
+        priority.push('<div class="legend-item">Road watch = relative, not probability</div>');
+      }
     } else {
       priority.push('<div class="legend-item"><span class="legend-dot"></span>เหตุที่ยืนยันได้</div>');
     }
@@ -302,7 +342,7 @@
     if (map.getLayer("confirmed-incidents")) {
       const color = activeWindow === "now"
         ? cssVar("--danger")
-        : (activeWindow === "flood7d" || activeWindow === "flood30d")
+        : (activeWindow === "flood7d" || activeWindow === "flood30d" || activeWindow === "floodwatch")
           ? "#0ea5e9"
           : activeWindow === "7d" ? "#f59e0b" : "#7c6cff";
       map.setPaintProperty("confirmed-incidents", "circle-color", color);
@@ -313,6 +353,35 @@
         ["interpolate", ["linear"], ["zoom"], 9, activeWindow === "now" ? 5 : 4, 14, activeWindow === "now" ? 8 : 6]
       );
     }
+  }
+
+  function tmdGridGeoJSON() {
+    return {
+      type: "FeatureCollection",
+      features: (floodData?.tmd_forecast?.grid_points || []).map((row) => ({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [Number(row.longitude), Number(row.latitude)]
+        },
+        properties: {
+          next_24h_mm: Number(row.next_24h_mm || 0),
+          grid_id: row.grid_id || ""
+        }
+      }))
+    };
+  }
+
+  function floodWatchRoadExpression() {
+    const expr = ["match", ["get", "road_id"]];
+    (floodData?.road_watch?.profiles || []).forEach((row) => {
+      expr.push(row.road_id);
+      if (row.relative_watch_class === "HIGH_RELATIVE_WATCH") expr.push("#c026d3");
+      else if (row.relative_watch_class === "ELEVATED_RELATIVE_WATCH") expr.push("#f59e0b");
+      else expr.push("#38bdf8");
+    });
+    expr.push("rgba(0,0,0,0)");
+    return expr;
   }
 
   function floodHotspotGeoJSON() {
@@ -345,8 +414,15 @@
     const source = map.getSource("flood-hotspots");
     if (source) source.setData(floodHotspotGeoJSON());
     if (map.getLayer("flood-hotspots")) {
-      const visible = activeWindow === "flood7d" || activeWindow === "flood30d";
+      const visible = activeWindow === "flood7d" || activeWindow === "flood30d" || activeWindow === "floodwatch";
       map.setLayoutProperty("flood-hotspots", "visibility", visible ? "visible" : "none");
+    }
+    if (map.getLayer("tmd-precip-grid")) {
+      map.setLayoutProperty("tmd-precip-grid", "visibility", activeWindow === "floodwatch" ? "visible" : "none");
+    }
+    if (map.getLayer("flood-watch-roads")) {
+      map.setLayoutProperty("flood-watch-roads", "visibility", activeWindow === "floodwatch" ? "visible" : "none");
+      map.setPaintProperty("flood-watch-roads", "line-color", floodWatchRoadExpression());
     }
   }
 
@@ -431,6 +507,43 @@
       }
     });
 
+    map.addSource("tmd-precip-grid", { type: "geojson", data: tmdGridGeoJSON() });
+    map.addLayer({
+      id: "flood-watch-roads",
+      type: "line",
+      source: "road-network",
+      layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
+      paint: {
+        "line-color": floodWatchRoadExpression(),
+        "line-width": 5.2,
+        "line-opacity": 0.78
+      }
+    });
+    map.addLayer({
+      id: "tmd-precip-grid",
+      type: "circle",
+      source: "tmd-precip-grid",
+      layout: { visibility: "none" },
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["get", "next_24h_mm"],
+          0, 3,
+          20, 7,
+          60, 12
+        ],
+        "circle-color": [
+          "interpolate", ["linear"], ["get", "next_24h_mm"],
+          0, "#dbeafe",
+          15, "#38bdf8",
+          35, "#2563eb",
+          60, "#5b21b6"
+        ],
+        "circle-opacity": 0.58,
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 0.8
+      }
+    });
+
     map.addSource("flood-hotspots", { type: "geojson", data: floodHotspotGeoJSON() });
     map.addLayer({
       id: "flood-hotspots",
@@ -452,10 +565,25 @@
 
     map.on("click", (e) => {
       const features = map.queryRenderedFeatures(e.point, {
-        layers: ["flood-hotspots", "confirmed-incidents", "road-network"]
+        layers: ["tmd-precip-grid", "flood-hotspots", "flood-watch-roads", "confirmed-incidents", "road-network"]
       });
       const feature = features[0];
       if (!feature) return;
+
+      if (feature.layer.id === "tmd-precip-grid") {
+        const props = feature.properties || {};
+        const coords = feature.geometry.coordinates.slice();
+        new maplibregl.Popup({ closeButton: true, maxWidth: "320px" })
+          .setLngLat(coords)
+          .setHTML(
+            '<div class="map-popup-title">TMD 3-km forecast grid</div>'
+            + '<div class="map-popup-meta">24h accumulation: '
+            + escapeHtml(Number(props.next_24h_mm || 0).toFixed(1)) + ' mm</div>'
+            + '<div class="map-popup-meta">Forecast model output — not measured rainfall</div>'
+          )
+          .addTo(map);
+        return;
+      }
 
       if (feature.layer.id === "flood-hotspots") {
         const props = feature.properties || {};

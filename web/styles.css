@@ -544,3 +544,73 @@ footer {
   .flood-overview,
   .flood-detail-grid { grid-template-columns: 1fr; }
 }
+
+
+/* Flood Watch v0.2 */
+.map-window-button--watch.is-active {
+  background: #5b21b6;
+  color: #fff;
+}
+.flood-watch-grid {
+  display: grid;
+  grid-template-columns: 1.35fr .85fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+.watch-note {
+  color: var(--subtle);
+  font-size: .67rem;
+  line-height: 1.5;
+  margin: -2px 0 9px;
+}
+.watch-road-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 64px 70px;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: .68rem;
+}
+.watch-road-row:last-child { border-bottom: 0; }
+.watch-road-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-road-row strong { text-align: right; font-size: .7rem; }
+.watch-road-row em { text-align: right; color: var(--muted); font-style: normal; font-size: .64rem; }
+.watch-badge {
+  display: inline-flex;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 3px 6px;
+  font-size: .57rem;
+  letter-spacing: .04em;
+  border: 1px solid var(--line);
+}
+.watch-badge--high { color: #c026d3; border-color: color-mix(in srgb, #c026d3 45%, var(--line)); }
+.watch-badge--elevated { color: #d97706; border-color: color-mix(in srgb, #d97706 45%, var(--line)); }
+.watch-badge--lower { color: #0284c7; border-color: color-mix(in srgb, #0284c7 45%, var(--line)); }
+.forecast-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+.forecast-summary strong {
+  font-size: 2rem;
+  letter-spacing: -.04em;
+}
+.forecast-summary span {
+  color: var(--muted);
+  font-size: .68rem;
+}
+.source-detail {
+  color: var(--muted);
+  font-size: .7rem;
+  line-height: 1.55;
+}
+.source-subtitle {
+  margin-top: 20px;
+}
+@media (max-width: 880px) {
+  .flood-watch-grid { grid-template-columns: 1fr; }
+  .watch-road-row { grid-template-columns: minmax(0, 1fr) 60px 56px 66px; }
+}

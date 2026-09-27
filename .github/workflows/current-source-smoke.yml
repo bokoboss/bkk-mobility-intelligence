@@ -65,7 +65,19 @@ jobs:
         run: python scripts/live/fetch_itic_cameras.py
 
       - name: Fetch TMD NWP precipitation context
-        run: python scripts/live/fetch_tmd_precip_context.py
+        id: tmd_context
+        run: |
+          python scripts/live/fetch_tmd_precip_context.py
+          echo "init_time=$(python -c 'import json; print(json.load(open("data/raw/current_context/tmd_precip_context.json")).get("initial_time", "unknown"))')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore TMD Domain-2 precipitation cache
+        uses: actions/cache@v4
+        with:
+          path: data/cache/tmd/
+          key: tmd-p24h-d02-${{ steps.tmd_context.outputs.init_time }}
+
+      - name: Build HII station registry
+        run: python scripts/live/fetch_hii_rain_station_registry.py
 
       - name: Analyze Longdo Traffic Index baseline
         run: python scripts/analysis/analyze_longdo_traffic_index.py
@@ -104,6 +116,11 @@ jobs:
             --output data/processed/history/recent_30d.network_matched.json
           python scripts/history/build_recent_incident_intelligence.py \
             --events data/processed/history/recent_30d.network_matched.json
+
+      - name: Sample TMD 3-km precipitation grid
+        run: |
+          python scripts/live/sample_tmd_precip_grid.py \
+            --network data/processed/osm/core_roads.geojson
 
       - name: Build flood/rain intelligence
         run: python scripts/flood/build_flood_intelligence.py

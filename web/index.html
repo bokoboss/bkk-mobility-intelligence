@@ -72,6 +72,7 @@
                 <button class="map-window-button" data-window="30d" type="button">30 Days</button>
                 <button class="map-window-button map-window-button--flood" data-window="flood7d" type="button">Flood 7D</button>
                 <button class="map-window-button map-window-button--flood" data-window="flood30d" type="button">Flood 30D</button>
+                <button class="map-window-button map-window-button--watch" data-window="floodwatch" type="button">Flood Watch</button>
               </div>
               <button id="fitAreaButton" class="map-tool-button" type="button">Fit Area</button>
               <span class="map-provider">OpenFreeMap · OSM</span>
@@ -157,11 +158,29 @@
           <div id="floodHotspots"></div>
         </article>
       </section>
+      <section class="flood-watch-grid">
+        <article class="panel flood-detail-card">
+          <div class="history-rank-title">RELATIVE ROAD WATCH · TMD NEXT 24H + 30D FLOOD RECURRENCE</div>
+          <div class="watch-note">ดัชนีเปรียบเทียบภายในพื้นที่ศึกษาเท่านั้น: 70% flood recurrence percentile + 30% TMD forecast precipitation percentile — ไม่ใช่ flood probability</div>
+          <div id="floodWatchRoads"></div>
+        </article>
+        <article class="panel flood-detail-card">
+          <div class="history-rank-title">TMD DOMAIN 2 · NEXT 24H FORECAST</div>
+          <div class="forecast-summary">
+            <strong id="tmdNext24Max">—</strong>
+            <span>max mm in sampled study grid</span>
+          </div>
+          <div id="tmdGridSummary" class="source-detail">—</div>
+          <div class="history-rank-title source-subtitle">HII STATION REGISTRY</div>
+          <div id="hiiRegistrySummary" class="source-detail">—</div>
+        </article>
+      </section>
+
       <section class="hydro-source-strip">
         <article class="hydro-source-card">
           <span>TMD NWP</span>
           <strong id="tmdHydroStatus">—</strong>
-          <small id="tmdHydroMeta">forecast metadata context</small>
+          <small id="tmdHydroMeta">3-km forecast grid · not observed rainfall</small>
         </article>
         <article class="hydro-source-card hydro-source-card--pending">
           <span>BMA STREET FLOOD</span>
@@ -169,9 +188,9 @@
           <small>runner ถูก reset connection — ยังไม่ scrape เพื่อหลีกเลี่ยงค่าผิด</small>
         </article>
         <article class="hydro-source-card hydro-source-card--pending">
-          <span>BMA RAIN GAUGES</span>
-          <strong>Official / not ingested</strong>
-          <small>รอ stable machine-readable contract</small>
+          <span>HII RAIN / WATER REGISTRY</span>
+          <strong id="hiiHydroStatus">—</strong>
+          <small id="hiiHydroMeta">station metadata; current archive checked explicitly</small>
         </article>
       </section>
 
