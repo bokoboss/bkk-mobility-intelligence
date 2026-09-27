@@ -6,6 +6,9 @@ on:
     paths:
       - "scripts/live/**"
       - "scripts/spatial/**"
+      - "scripts/analysis/**"
+      - "scripts/build/**"
+      - "web/**"
       - "config/study_area.json"
       - "tests/**"
       - ".github/workflows/current-source-smoke.yml"
@@ -74,6 +77,12 @@ jobs:
       - name: Build frontend-neutral Now snapshot
         run: python scripts/build/build_now_snapshot.py
 
+      - name: Build Now dashboard preview
+        run: |
+          python scripts/build/build_static_site.py
+          test -s dist/index.html
+          python -c 'import json; json.load(open("dist/data/latest_status.json", encoding="utf-8")); json.load(open("dist/data/core_roads.geojson", encoding="utf-8"))'
+
       - name: Print latest summary
         if: always()
         shell: bash
@@ -84,6 +93,15 @@ jobs:
           else
             echo "No latest manifest was produced."
           fi
+
+      - name: Upload Now dashboard preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: now-dashboard-preview
+          path: dist/
+          if-no-files-found: warn
+          retention-days: 3
 
       - name: Upload current-source artifact
         if: always()

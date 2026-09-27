@@ -33,6 +33,11 @@ def parse_args() -> argparse.Namespace:
         default=Path("data/processed/current_speed/longdo_speed.json"),
     )
     p.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config/study_area.json"),
+    )
+    p.add_argument(
         "--output",
         type=Path,
         default=Path("data/processed/now/latest_status.json"),
@@ -54,12 +59,15 @@ def main() -> int:
     ti = load(args.traffic_index)
     ti_baseline = load(args.traffic_index_baseline)
     cameras = load(args.cameras)
+    config = load(args.config)
 
     roads = {
-        "ram_inthra": {"confirmed_incidents": []},
-        "prasert_manukitch": {"confirmed_incidents": []},
-        "pradit_manutham": {"confirmed_incidents": []},
-        "nuan_chan": {"confirmed_incidents": []},
+        road["id"]: {
+            "display_name": road.get("display_name"),
+            "aliases": road.get("aliases", []),
+            "confirmed_incidents": [],
+        }
+        for road in config.get("roads", [])
     }
     for cluster in clusters_doc.get("clusters", []):
         rid = cluster.get("road_id")
@@ -97,6 +105,32 @@ def main() -> int:
             "segment_speed": (
                 "AVAILABLE_EXPERIMENTAL" if speed is not None else "UNAVAILABLE"
             ),
+        },
+        "source_details": {
+            "events": {
+                "provider": manifest["sources"]["events"].get("provider"),
+                "retrieved_at_utc": manifest["sources"]["events"].get(
+                    "retrieved_at_utc"
+                ),
+                "latest_event_start": (
+                    (manifest["sources"]["events"].get("audit") or {}).get(
+                        "latest_event_start"
+                    )
+                ),
+                "latest_event_age_hours": (
+                    (manifest["sources"]["events"].get("audit") or {}).get(
+                        "latest_event_start_age_hours_at_retrieval"
+                    )
+                ),
+            },
+            "traffic_index": {
+                "provider": ti.get("provider"),
+                "source_time_utc": ti["data"].get("source_time_utc"),
+                "retrieved_at_utc": ti["data"].get("retrieved_at_utc"),
+                "age_minutes_at_retrieval": ti["data"].get(
+                    "age_minutes_at_retrieval"
+                ),
+            },
         },
         "city_context": {
             "traffic_index": ti["data"],

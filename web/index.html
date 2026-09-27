@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Latest-first mobility intelligence POC for the Ram Inthra area.">
+  <title>BKK Mobility Intelligence — Ramintra Area</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-kicker">LATEST-FIRST MOBILITY POC</div>
+        <h1>BKK Mobility Intelligence</h1>
+        <p>รามอินทรา · ประเสริฐมนูกิจ · ประดิษฐ์มนูธรรม · นวลจันทร์</p>
+      </div>
+      <div class="topbar-actions">
+        <div class="freshness-pill" id="freshnessPill">
+          <span class="status-dot"></span>
+          <span id="freshnessText">กำลังโหลดข้อมูลล่าสุด…</span>
+        </div>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="สลับโหมดสี">
+          <span aria-hidden="true">◐</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="metric-grid" aria-label="Current mobility summary">
+        <article class="metric-card metric-card--accent">
+          <div class="metric-label">BANGKOK TRAFFIC INDEX</div>
+          <div class="metric-mainline">
+            <span class="metric-value" id="trafficIndexValue">—</span>
+            <span class="metric-unit">/ 10</span>
+          </div>
+          <div class="metric-status" id="trafficIndexStatus">กำลังโหลด</div>
+          <div class="metric-foot" id="trafficIndexBaseline">เทียบ baseline ปี 2026</div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-label">CONFIRMED INCIDENTS</div>
+          <div class="metric-mainline">
+            <span class="metric-value" id="incidentCount">—</span>
+            <span class="metric-unit">เหตุ</span>
+          </div>
+          <div class="metric-status" id="incidentBreakdown">—</div>
+          <div class="metric-foot">geometry + route identity + deduplication</div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-label">SEGMENT SPEED</div>
+          <div class="metric-mainline">
+            <span class="metric-value metric-value--small" id="speedValue">—</span>
+          </div>
+          <div class="metric-status metric-status--muted" id="speedStatus">ยังไม่มี current speed source</div>
+          <div class="metric-foot">ไม่อนุมานความเร็วจาก incident หรือ Traffic Index</div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-label">DATA FRESHNESS</div>
+          <div class="metric-mainline">
+            <span class="metric-value metric-value--small" id="latestEventAge">—</span>
+          </div>
+          <div class="metric-status" id="latestEventTime">—</div>
+          <div class="metric-foot">iTIC / Longdo latest incidents</div>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <article class="panel map-panel">
+          <div class="panel-heading">
+            <div>
+              <div class="panel-kicker">NETWORK VIEW</div>
+              <h2>เหตุการณ์ล่าสุดบนเครือข่ายนำร่อง</h2>
+            </div>
+            <div class="map-legend" id="mapLegend"></div>
+          </div>
+
+          <div class="map-stage" id="mapStage">
+            <svg id="networkMap" viewBox="0 0 1000 620" role="img" aria-label="แผนผังถนนนำร่องและเหตุการณ์ล่าสุด"></svg>
+            <div class="map-empty" id="mapEmpty" hidden>ไม่พบ geometry สำหรับแสดงผล</div>
+            <div class="map-tooltip" id="mapTooltip" hidden></div>
+          </div>
+
+          <div class="map-caption">
+            แผนภาพใช้ geometry จาก OpenStreetMap เพื่อจับตำแหน่งเหตุ ไม่ใช่แผนที่นำทาง และไม่ได้แสดงระดับความติดขัดของถนน
+          </div>
+        </article>
+
+        <aside class="panel incident-panel">
+          <div class="panel-heading panel-heading--stack">
+            <div>
+              <div class="panel-kicker">INCIDENT FEED</div>
+              <h2>เหตุที่ยืนยันได้</h2>
+            </div>
+            <div class="filter-row" id="incidentFilters"></div>
+          </div>
+          <div class="incident-list" id="incidentList"></div>
+        </aside>
+      </section>
+
+      <section class="section-heading">
+        <div>
+          <div class="panel-kicker">ROAD STATUS</div>
+          <h2>มุมมองรายถนน</h2>
+        </div>
+        <p>แสดงเฉพาะสิ่งที่ข้อมูลรองรับ ไม่มีการตีความว่า “รถโล่ง” เมื่อยังไม่มี speed source</p>
+      </section>
+      <section class="road-grid" id="roadCards"></section>
+
+      <section class="panel evidence-panel">
+        <div class="evidence-copy">
+          <div class="panel-kicker">DATA CONFIDENCE</div>
+          <h2>สิ่งที่ระบบรู้ และสิ่งที่ยังไม่รู้</h2>
+          <p>
+            ฝั่ง incident ผ่านการกรองด้วย exact road geometry และ route identity แล้ว ส่วน Longdo Traffic Index
+            ใช้เป็นบริบทภาพรวมกรุงเทพฯ/ปริมณฑลเท่านั้น ไม่ใช้แทนความเร็วบนถนน 4 เส้น
+          </p>
+        </div>
+        <div class="evidence-grid">
+          <div class="evidence-item evidence-item--ready">
+            <span>READY</span>
+            <strong>Live incidents</strong>
+            <small>iTIC / Longdo + spatial confirmation</small>
+          </div>
+          <div class="evidence-item evidence-item--ready">
+            <span>READY</span>
+            <strong>City context</strong>
+            <small>Traffic Index + 2026 same-time baseline</small>
+          </div>
+          <div class="evidence-item evidence-item--blocked">
+            <span>BLOCKED</span>
+            <strong>Segment speed</strong>
+            <small>รอ provider/API access ที่ให้ speed รายช่วงถนน</small>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div>POC — decision-support context, not an official traffic control system.</div>
+      <div>Sources: iTIC Foundation / Longdo Traffic · OpenStreetMap contributors (ODbL)</div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
