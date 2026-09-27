@@ -1,279 +1,306 @@
 #!/usr/bin/env python3
-"""Audit public hydro source contracts for Flood Intelligence v0.2.
+"""Targeted source-schema audit for Flood Intelligence v0.2.
 
-The audit is deliberately metadata-first: discover CKAN resource URLs, current
-TMD precipitation products and machine-readable contracts without persisting
-large source files.
+Discovers:
+- HII hourly-rain station metadata and current-month file schema;
+- TMD Domain-2 precipitation CSV schema without downloading the full grid.
 """
 
 from __future__ import annotations
 
+import csv
+import datetime as dt
 from html.parser import HTMLParser
+import io
 import json
 import re
 import urllib.parse
 import urllib.request
 from typing import Any
 
-USER_AGENT = "bkk-mobility-intelligence-hydro-audit/0.2"
-
-CKAN_QUERIES = {
-    "data_go_hii_rainfall": "https://data.go.th/api/3/action/package_show?id=hii-rainfall",
-    "data_go_bma_radar": "https://data.go.th/api/3/action/package_show?id=69-05-disaster",
-    "hii_spatial_rain": "https://datagov.hii.or.th/api/3/action/package_show?id=spatial-rain",
+USER_AGENT = "bkk-mobility-intelligence-hydro-audit/0.3"
+HII_ROOT = "https://tiservice.hii.or.th/opendata/data_catalog/hourly_rain"
+HII_META = HII_ROOT + "/0all_stn_metadata.csv"
+TMD_PAGE = "https://hpc.tmd.go.th/download"
+STUDY_BBOX = {
+    "min_lon": 100.57,
+    "min_lat": 13.755,
+    "max_lon": 100.79,
+    "max_lat": 13.93,
 }
 
-PAGE_SOURCES = {
-    "hii_data_page": "https://data.hii.or.th/dataset/spatial-rain",
-    "tmd_nwp": "https://hpc.tmd.go.th/download",
-}
 
-TOKENS = (
-    "api", "json", "ajax", "station", "summary", "flood", "rain",
-    "water", "latitude", "longitude", "lat", "lng", "prec1hr",
-    "csv", "netcdf", "rainhistory", "download-files", "tiservice",
-)
-
-
-class Parser(HTMLParser):
+class LinkParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.links: list[str] = []
-        self.scripts: list[str] = []
-        self.options: list[dict[str, str | bool]] = []
+        self.init_times: list[str] = []
         self.in_init_select = False
-        self.title_parts: list[str] = []
-        self.in_title = False
 
     def handle_starttag(self, tag: str, attrs_list: list[tuple[str, str | None]]) -> None:
         attrs = {k: v for k, v in attrs_list}
         if tag == "a" and attrs.get("href"):
             self.links.append(str(attrs["href"]))
-        elif tag == "script" and attrs.get("src"):
-            self.scripts.append(str(attrs["src"]))
         elif tag == "select" and attrs.get("id") == "download-init-time":
             self.in_init_select = True
         elif tag == "option" and self.in_init_select:
             value = str(attrs.get("value") or "").strip()
-            if value:
-                self.options.append({
-                    "value": value,
-                    "selected": "selected" in attrs,
-                })
-        elif tag == "title":
-            self.in_title = True
+            if re.fullmatch(r"\d{10}", value):
+                self.init_times.append(value)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "select":
             self.in_init_select = False
-        elif tag == "title":
-            self.in_title = False
-
-    def handle_data(self, data: str) -> None:
-        if self.in_title:
-            self.title_parts.append(data.strip())
 
 
-def fetch(url: str, timeout: float = 35.0) -> tuple[bytes, dict[str, Any]]:
+def request(url: str, timeout: float = 35.0, accept: str = "*/*"):
     req = urllib.request.Request(
         url,
         headers={
             "User-Agent": USER_AGENT,
-            "Accept": "application/json,text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept": accept,
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        body = resp.read()
-        meta = {
-            "status": getattr(resp, "status", None),
-            "final_url": resp.geturl(),
-            "content_type": resp.headers.get("Content-Type"),
-            "content_length_read": len(body),
-        }
-    return body, meta
+    return urllib.request.urlopen(req, timeout=timeout)
 
 
-def text_body(body: bytes) -> str:
-    return body.decode("utf-8", errors="replace")
+def fetch_bytes(url: str, timeout: float = 35.0) -> bytes:
+    with request(url, timeout=timeout) as resp:
+        return resp.read()
 
 
-def token_snippets(text: str, radius: int = 220) -> list[dict[str, str]]:
-    compact = re.sub(r"\s+", " ", text)
-    lower = compact.casefold()
-    hits = []
-    for token in TOKENS:
-        pos = lower.find(token.casefold())
-        if pos < 0:
+def decode_csv_bytes(raw: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "cp874", "tis-620"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
             continue
-        start = max(0, pos - radius)
-        end = min(len(compact), pos + len(token) + radius)
-        hits.append({"token": token, "snippet": compact[start:end]})
-    return hits
+    return raw.decode("utf-8", errors="replace")
 
 
-def clean_resource(resource: dict[str, Any]) -> dict[str, Any]:
-    keys = (
-        "id", "name", "description", "format", "mimetype", "url",
-        "url_type", "last_modified", "created", "resource_type",
+def to_float(value: Any) -> float | None:
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def detect_field(fieldnames: list[str], exact: tuple[str, ...], contains: tuple[str, ...]) -> str | None:
+    lowered = {str(x).strip().casefold(): x for x in fieldnames}
+    for name in exact:
+        if name in lowered:
+            return lowered[name]
+    for field in fieldnames:
+        low = str(field).strip().casefold()
+        if any(token in low for token in contains):
+            return field
+    return None
+
+
+def audit_hii_metadata() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    raw = fetch_bytes(HII_META, timeout=35)
+    text = decode_csv_bytes(raw)
+    reader = csv.DictReader(io.StringIO(text))
+    fieldnames = [str(x or "").strip() for x in (reader.fieldnames or [])]
+
+    lat_field = detect_field(
+        fieldnames,
+        ("latitude", "lat", "station_lat"),
+        ("latitude", "_lat", " lat"),
     )
-    out = {key: resource.get(key) for key in keys if key in resource}
-    return out
+    lon_field = detect_field(
+        fieldnames,
+        ("longitude", "lon", "lng", "station_lon"),
+        ("longitude", "_lon", "_lng", " lon", " lng"),
+    )
+    id_field = detect_field(
+        fieldnames,
+        ("station_code", "station_id", "tele_station_id", "id"),
+        ("station_code", "station_id", "stationcode", "tele_station"),
+    )
+    name_field = detect_field(
+        fieldnames,
+        ("station_name", "name", "station_name_th"),
+        ("station_name", "stationname"),
+    )
 
-
-def audit_ckan(name: str, url: str) -> dict[str, Any]:
-    try:
-        body, meta = fetch(url)
-        payload = json.loads(text_body(body))
-        result = payload.get("result") if isinstance(payload, dict) else None
-        resources = result.get("resources") if isinstance(result, dict) else []
-        return {
-            "name": name,
-            "requested_url": url,
-            **meta,
-            "success": payload.get("success") if isinstance(payload, dict) else None,
-            "dataset_id": result.get("id") if isinstance(result, dict) else None,
-            "dataset_name": result.get("name") if isinstance(result, dict) else None,
-            "dataset_title": result.get("title") if isinstance(result, dict) else None,
-            "license_title": result.get("license_title") if isinstance(result, dict) else None,
-            "metadata_modified": result.get("metadata_modified") if isinstance(result, dict) else None,
-            "resources": [
-                clean_resource(x) for x in (resources or []) if isinstance(x, dict)
-            ],
+    bbox_rows = []
+    sample_rows = []
+    row_count = 0
+    for row in reader:
+        row_count += 1
+        compact = {
+            k: row.get(k)
+            for k in fieldnames[:30]
         }
-    except Exception as exc:
-        return {
-            "name": name,
-            "requested_url": url,
-            "error": f"{type(exc).__name__}: {exc}",
-        }
+        if len(sample_rows) < 3:
+            sample_rows.append(compact)
+
+        lat = to_float(row.get(lat_field)) if lat_field else None
+        lon = to_float(row.get(lon_field)) if lon_field else None
+        if lat is None or lon is None:
+            continue
+        if (
+            STUDY_BBOX["min_lat"] <= lat <= STUDY_BBOX["max_lat"]
+            and STUDY_BBOX["min_lon"] <= lon <= STUDY_BBOX["max_lon"]
+        ):
+            bbox_rows.append({
+                "station_id": row.get(id_field) if id_field else None,
+                "station_name": row.get(name_field) if name_field else None,
+                "latitude": lat,
+                "longitude": lon,
+                "row": compact,
+            })
+
+    return (
+        {
+            "url": HII_META,
+            "byte_count": len(raw),
+            "fieldnames": fieldnames,
+            "detected_fields": {
+                "station_id": id_field,
+                "station_name": name_field,
+                "latitude": lat_field,
+                "longitude": lon_field,
+            },
+            "row_count": row_count,
+            "bbox_station_count": len(bbox_rows),
+            "sample_rows": sample_rows,
+        },
+        bbox_rows[:30],
+    )
 
 
-def audit_page(name: str, url: str) -> dict[str, Any]:
-    try:
-        body, meta = fetch(url)
-    except Exception as exc:
-        return {
-            "name": name,
-            "requested_url": url,
-            "error": f"{type(exc).__name__}: {exc}",
+def audit_hii_month(stations: list[dict[str, Any]]) -> dict[str, Any]:
+    month = dt.datetime.now(dt.timezone(dt.timedelta(hours=7))).strftime("%Y%m")
+    url = f"{HII_ROOT}/{month[:4]}/{month}/"
+    html = fetch_bytes(url, timeout=30).decode("utf-8", errors="replace")
+    parser = LinkParser()
+    parser.feed(html)
+    csv_links = [
+        x for x in parser.links
+        if x.casefold().endswith(".csv") and not x.startswith("?")
+    ]
+
+    station_ids = [
+        str(x.get("station_id") or "").strip()
+        for x in stations
+        if str(x.get("station_id") or "").strip()
+    ]
+    matched = []
+    for href in csv_links:
+        stem = href.rsplit("/", 1)[-1].removesuffix(".csv")
+        for station_id in station_ids:
+            if station_id == stem or station_id in stem or stem in station_id:
+                matched.append({
+                    "href": href,
+                    "station_id": station_id,
+                })
+                break
+
+    chosen = matched[0]["href"] if matched else (csv_links[0] if csv_links else None)
+    sample = None
+    if chosen:
+        file_url = urllib.parse.urljoin(url, chosen)
+        raw = fetch_bytes(file_url, timeout=30)
+        text = decode_csv_bytes(raw)
+        reader = csv.DictReader(io.StringIO(text))
+        rows = list(reader)
+        sample = {
+            "url": file_url,
+            "byte_count": len(raw),
+            "fieldnames": [str(x or "").strip() for x in (reader.fieldnames or [])],
+            "row_count": len(rows),
+            "first_rows": rows[:3],
+            "last_rows": rows[-3:],
         }
-    text = text_body(body)
-    parser = Parser()
-    parser.feed(text)
-    interesting = []
-    for value in parser.links + parser.scripts:
-        absolute = urllib.parse.urljoin(meta["final_url"], value)
-        low = absolute.casefold()
-        if any(token in low for token in ("api", "rain", "csv", "json", "download", "tiservice")):
-            if absolute not in interesting:
-                interesting.append(absolute)
+
     return {
-        "name": name,
-        "requested_url": url,
-        **meta,
-        "title": " ".join(x for x in parser.title_parts if x)[:300],
-        "init_time_options": parser.options[:20],
-        "interesting_urls": interesting[:80],
-        "token_hits": token_snippets(text)[:30],
+        "url": url,
+        "csv_file_count": len(csv_links),
+        "first_csv_files": csv_links[:30],
+        "matched_study_station_files": matched[:30],
+        "sample_station_file": sample,
     }
 
 
-def discover_tmd_precip() -> dict[str, Any]:
-    page_url = PAGE_SOURCES["tmd_nwp"]
-    try:
-        body, meta = fetch(page_url)
-        html = text_body(body)
-        parser = Parser()
-        parser.feed(html)
-        values = [
-            str(x.get("value") or "")
-            for x in parser.options
-            if re.fullmatch(r"\d{10}", str(x.get("value") or ""))
-        ]
-        init_time = max(values) if values else None
-        if not init_time:
-            matches = re.findall(r'<option[^>]+value=["\'](\d{10})["\']', html)
-            init_time = max(matches) if matches else None
-        if not init_time:
-            return {"status": "NO_INIT_TIME", **meta}
-
-        api = "https://hpc.tmd.go.th/api/download-files?" + urllib.parse.urlencode(
-            {"init_time": init_time}
-        )
-        raw, api_meta = fetch(api)
-        payload = json.loads(text_body(raw))
-        files = payload.get("files") if isinstance(payload, dict) else []
-        files = [x for x in (files or []) if isinstance(x, dict)]
-
-        precip = []
-        for item in files:
-            hay = json.dumps(item, ensure_ascii=False).casefold()
-            if "prec" in hay or "rain" in hay or "p24h" in hay:
-                precip.append(item)
-
-        compact = []
-        for item in precip:
-            compact.append({
-                key: item.get(key)
-                for key in (
-                    "filename", "description", "domain", "domain_code",
-                    "format", "size", "url"
-                )
-                if key in item
-            })
-        return {
-            "status": "OK",
-            "page_meta": meta,
-            "api_meta": api_meta,
-            "init_time": init_time,
-            "file_count": len(files),
-            "precip_files": compact,
-        }
-    except Exception as exc:
-        return {"status": "ERROR", "error": f"{type(exc).__name__}: {exc}"}
+def tmd_file_list() -> tuple[str, list[dict[str, Any]]]:
+    html = fetch_bytes(TMD_PAGE, timeout=30).decode("utf-8", errors="replace")
+    parser = LinkParser()
+    parser.feed(html)
+    if not parser.init_times:
+        raise RuntimeError("TMD init time not found")
+    init_time = max(parser.init_times)
+    api = (
+        "https://hpc.tmd.go.th/api/download-files?"
+        + urllib.parse.urlencode({"init_time": init_time})
+    )
+    payload = json.loads(fetch_bytes(api, timeout=30).decode("utf-8"))
+    files = payload.get("files") if isinstance(payload, dict) else []
+    return init_time, [x for x in (files or []) if isinstance(x, dict)]
 
 
-def probe_resource_urls(ckan_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    probes = []
-    seen = set()
-    for dataset in ckan_results:
-        for resource in dataset.get("resources") or []:
-            url = resource.get("url")
-            if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-                continue
-            if url in seen:
-                continue
-            seen.add(url)
-            low = url.casefold()
-            if not any(token in low for token in ("hii", "rain", "tiservice", "json", "csv")):
-                continue
+def stream_csv_sample(url: str, rows: int = 4) -> dict[str, Any]:
+    with request(url, timeout=35, accept="text/csv,*/*") as resp:
+        wrapped = io.TextIOWrapper(resp, encoding="utf-8-sig", errors="replace", newline="")
+        reader = csv.reader(wrapped)
+        out = []
+        for _ in range(rows):
             try:
-                body, meta = fetch(url, timeout=20)
-                sample = body[:500].decode("utf-8", errors="replace")
-                probes.append({
-                    "url": url,
-                    **meta,
-                    "sample_prefix": re.sub(r"\s+", " ", sample)[:500],
-                })
-            except Exception as exc:
-                probes.append({
-                    "url": url,
-                    "error": f"{type(exc).__name__}: {exc}",
-                })
-            if len(probes) >= 20:
-                return probes
-    return probes
+                out.append(next(reader))
+            except StopIteration:
+                break
+        return {
+            "url": url,
+            "content_type": resp.headers.get("Content-Type"),
+            "content_length": resp.headers.get("Content-Length"),
+            "rows": out,
+        }
+
+
+def audit_tmd_csv() -> dict[str, Any]:
+    init_time, files = tmd_file_list()
+    wanted = {}
+    for item in files:
+        filename = str(item.get("filename") or "")
+        if filename.startswith("p1h.d02.") and filename.endswith(".csv"):
+            wanted["p1h_d02"] = item
+        if filename.startswith("p24h.d02.") and filename.endswith(".csv"):
+            wanted["p24h_d02"] = item
+
+    samples = {}
+    for key, item in wanted.items():
+        path = str(item.get("url") or "")
+        url = urllib.parse.urljoin("https://hpc.tmd.go.th", path)
+        samples[key] = {
+            "metadata": {
+                k: item.get(k)
+                for k in ("filename", "description", "domain", "format", "size", "url")
+            },
+            "sample": stream_csv_sample(url),
+        }
+
+    return {
+        "init_time": init_time,
+        "samples": samples,
+    }
 
 
 def main() -> int:
-    ckan = [audit_ckan(name, url) for name, url in CKAN_QUERIES.items()]
-    pages = [audit_page(name, url) for name, url in PAGE_SOURCES.items()]
-    result = {
-        "ckan": ckan,
-        "pages": pages,
-        "resource_probes": probe_resource_urls(ckan),
-        "tmd_precip": discover_tmd_precip(),
-    }
+    result: dict[str, Any] = {}
+    try:
+        meta, stations = audit_hii_metadata()
+        result["hii_metadata"] = meta
+        result["hii_study_stations"] = stations
+        result["hii_current_month"] = audit_hii_month(stations)
+    except Exception as exc:
+        result["hii_error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        result["tmd_csv"] = audit_tmd_csv()
+    except Exception as exc:
+        result["tmd_error"] = f"{type(exc).__name__}: {exc}"
+
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
