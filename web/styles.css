@@ -614,3 +614,51 @@ footer {
   .flood-watch-grid { grid-template-columns: 1fr; }
   .watch-road-row { grid-template-columns: minmax(0, 1fr) 60px 56px 66px; }
 }
+
+
+/* Bangkok-wide district UX */
+.district-control {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 7px 0 9px;
+  border: 1px solid rgba(30,41,59,.16);
+  border-radius: 8px;
+  background: rgba(255,255,255,.94);
+  box-shadow: 0 3px 12px rgba(15,23,42,.12);
+  color: #657286;
+  font-size: .64rem;
+  font-weight: 700;
+}
+.district-select {
+  max-width: 155px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #263244;
+  font: inherit;
+  cursor: pointer;
+}
+.district-select option { color: #111827; }
+.history-overview {
+  grid-template-columns: repeat(3, minmax(135px, .62fr)) repeat(3, minmax(215px, 1.15fr));
+}
+.flood-detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.district-map-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+}
+@media (max-width: 1250px) {
+  .history-overview { grid-template-columns: repeat(3, 1fr); }
+  .flood-detail-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .district-control { width: 100%; }
+  .district-select { max-width: none; flex: 1; }
+  .history-overview, .flood-detail-grid { grid-template-columns: 1fr; }
+}

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Latest-first mobility intelligence POC for an expanded Northeast Bangkok road network.">
-  <title>BKK Mobility Intelligence — Northeast Bangkok</title>
+  <meta name="description" content="Latest-first mobility and flood intelligence across all 50 Bangkok districts.">
+  <title>BKK Mobility Intelligence — Bangkok-wide</title>
   <link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -12,9 +12,9 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-kicker">LATEST-FIRST MOBILITY POC · EXPANDED V1</div>
+        <div class="brand-kicker">LATEST-FIRST MOBILITY POC · BANGKOK-WIDE V1</div>
         <h1>BKK Mobility Intelligence</h1>
-        <p>Expanded Northeast Bangkok · Priority: รามอินทรา · ประเสริฐมนูกิจ · ประดิษฐ์มนูธรรม · นวลจันทร์</p>
+        <p>ครบ 50 เขตกรุงเทพมหานคร · Strategic + Urban Road Network · Road / District / Flood Watch</p>
       </div>
       <div class="topbar-actions">
         <div class="freshness-pill" id="freshnessPill">
@@ -37,7 +37,7 @@
           <div class="metric-label">CONFIRMED INCIDENTS</div>
           <div class="metric-mainline"><span class="metric-value" id="incidentCount">—</span><span class="metric-unit">เหตุ</span></div>
           <div class="metric-status" id="incidentBreakdown">—</div>
-          <div class="metric-foot">expanded network · geometry + identity + deduplication</div>
+          <div class="metric-foot">Bangkok-wide network · 50-district polygon clip · geometry + identity + deduplication</div>
         </article>
         <article class="metric-card">
           <div class="metric-label">SEGMENT SPEED</div>
@@ -57,8 +57,8 @@
         <article class="panel map-panel">
           <div class="panel-heading">
             <div>
-              <div class="panel-kicker">EXPANDED NETWORK VIEW</div>
-              <h2>เหตุการณ์ล่าสุดบนถนนหลักในพื้นที่ขยาย</h2>
+              <div class="panel-kicker">BANGKOK-WIDE NETWORK VIEW</div>
+              <h2>เหตุการณ์ล่าสุดทั่วกรุงเทพฯ</h2>
             </div>
             <div class="map-legend" id="mapLegend"></div>
           </div>
@@ -66,6 +66,12 @@
             <div id="interactiveMap" role="application" aria-label="แผนที่ออนไลน์ของเครือข่ายถนนหลักและเหตุการณ์ล่าสุด"></div>
             <div class="map-loading" id="mapLoading">กำลังโหลด OpenFreeMap…</div>
             <div class="map-toolbar">
+              <label class="district-control">
+                <span>เขต</span>
+                <select id="districtSelect" class="district-select" aria-label="เลือกเขตกรุงเทพมหานคร">
+                  <option value="all">ทุกเขต</option>
+                </select>
+              </label>
               <div class="map-window-switch" id="mapWindowSwitch">
                 <button class="map-window-button is-active" data-window="now" type="button">Now</button>
                 <button class="map-window-button" data-window="7d" type="button">7 Days</button>
@@ -79,7 +85,7 @@
             </div>
           </div>
           <div class="map-caption">
-            Interactive basemap: OpenFreeMap / OpenStreetMap. โหมด Flood แสดงเฉพาะเหตุท่วมที่ยืนยันถนนแล้ว และวงแหวนแสดงจุดที่มีเหตุท่วมซ้ำภายในรัศมี 300 ม.
+            Interactive basemap: OpenFreeMap / OpenStreetMap. ขอบเขต 50 เขตใช้ staging district geometry; เลือกเขตเพื่อ drill down จาก Bangkok → District → Road → Hotspot.
           </div>
         </article>
 
@@ -120,6 +126,10 @@
           <div class="history-rank-title">ประเภทเหตุสูงสุด · 30 วัน</div>
           <div id="historyTopTypes"></div>
         </article>
+        <article class="history-rank">
+          <div class="history-rank-title">เขตที่มี reported episodes สูงสุด · 30 วัน</div>
+          <div id="historyTopDistricts"></div>
+        </article>
       </section>
 
       <section class="section-heading" id="flood-intelligence">
@@ -157,8 +167,17 @@
           <div class="history-rank-title">จุดน้ำท่วมซ้ำ · 30 วัน</div>
           <div id="floodHotspots"></div>
         </article>
+        <article class="panel flood-detail-card">
+          <div class="history-rank-title">เขตที่มี flood episodes สูงสุด · 30 วัน</div>
+          <div id="floodTopDistricts"></div>
+        </article>
       </section>
       <section class="flood-watch-grid">
+        <article class="panel flood-detail-card">
+          <div class="history-rank-title">RELATIVE DISTRICT WATCH · TMD NEXT 24H + 30D FLOOD RECURRENCE</div>
+          <div class="watch-note">คะแนนเปรียบเทียบภายใน 50 เขตเท่านั้น — ไม่ใช่ความน่าจะเป็นน้ำท่วม</div>
+          <div id="floodWatchDistricts"></div>
+        </article>
         <article class="panel flood-detail-card">
           <div class="history-rank-title">RELATIVE ROAD WATCH · TMD NEXT 24H + 30D FLOOD RECURRENCE</div>
           <div class="watch-note">ดัชนีเปรียบเทียบภายในพื้นที่ศึกษาเท่านั้น: 70% flood recurrence percentile + 30% TMD forecast precipitation percentile — ไม่ใช่ flood probability</div>
@@ -195,8 +214,8 @@
       </section>
 
       <section class="section-heading">
-        <div><div class="panel-kicker">ROAD STATUS</div><h2>Priority roads + ถนนที่มีเหตุล่าสุด</h2></div>
-        <p>แสดงถนน priority เสมอ และเพิ่มถนนใน expanded network เมื่อมี incident ที่ยืนยันได้</p>
+        <div><div class="panel-kicker">ROAD STATUS</div><h2>Strategic / Urban roads + ถนนที่มีเหตุล่าสุด</h2></div>
+        <p>เลือกเขตด้านบนเพื่อกรอง road cards และ incident feed ตามพื้นที่; focus roads เดิมยังคง stable IDs</p>
       </section>
       <section class="road-grid" id="roadCards"></section>
 
@@ -209,7 +228,7 @@
           </p>
         </div>
         <div class="evidence-grid">
-          <div class="evidence-item evidence-item--ready"><span>READY</span><strong>Expanded incident network</strong><small>dynamic OSM road catalog + iTIC/Longdo incidents</small></div>
+          <div class="evidence-item evidence-item--ready"><span>READY</span><strong>Bangkok-wide incident network</strong><small>50 districts + dynamic OSM strategic/urban road catalog + iTIC/Longdo incidents</small></div>
           <div class="evidence-item evidence-item--ready"><span>READY</span><strong>City context</strong><small>Traffic Index + 2026 same-time baseline</small></div>
           <div class="evidence-item evidence-item--blocked"><span>BLOCKED</span><strong>Segment speed</strong><small>รอ provider/API access ที่ให้ speed รายช่วงถนน</small></div>
         </div>

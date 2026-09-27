@@ -23,12 +23,102 @@
   let networkData = null;
   let historyData = null;
   let floodData = null;
+  let districtData = null;
+  let selectedDistrict = "all";
   let selectedRoad = "all";
   let activeWindow = "now";
   let map = null;
   let mapReady = false;
 
   const $ = (id) => document.getElementById(id);
+
+  function districtFeatures() {
+    return [...(districtData?.features || [])].sort((a, b) =>
+      String(a.properties?.district_name_th || "").localeCompare(
+        String(b.properties?.district_name_th || ""), "th"
+      )
+    );
+  }
+
+  function districtName(id) {
+    const feature = (districtData?.features || []).find(
+      (x) => String(x.properties?.district_id || "") === String(id)
+    );
+    return feature?.properties?.district_name_th || id;
+  }
+
+  function roadInSelectedDistrict(id) {
+    if (selectedDistrict === "all") return true;
+    return (roadMeta(id).district_ids || []).map(String).includes(String(selectedDistrict));
+  }
+
+  function incidentsForDistrict(windowId = activeWindow) {
+    const items = windowIncidents(windowId);
+    if (selectedDistrict === "all") return items;
+    return items.filter((item) => String(item.district_id || "") === String(selectedDistrict));
+  }
+
+  function districtRoadIds() {
+    return Object.keys(statusData?.roads || {}).filter(roadInSelectedDistrict);
+  }
+
+  function renderDistrictSelect() {
+    const select = $("districtSelect");
+    select.innerHTML = '<option value="all">ทุกเขต (Bangkok)</option>'
+      + districtFeatures().map((feature) => {
+        const p = feature.properties || {};
+        const id = String(p.district_id || "");
+        return '<option value="' + escapeHtml(id) + '">'
+          + escapeHtml(p.district_name_th || id) + '</option>';
+      }).join("");
+    select.value = selectedDistrict;
+    select.addEventListener("change", () => setDistrict(select.value));
+  }
+
+  function geometryBounds(feature) {
+    const points = [];
+    const walk = (value) => {
+      if (!Array.isArray(value)) return;
+      if (value.length >= 2 && typeof value[0] === "number" && typeof value[1] === "number") {
+        points.push(value);
+        return;
+      }
+      value.forEach(walk);
+    };
+    walk(feature?.geometry?.coordinates || []);
+    if (!points.length) return null;
+    const xs = points.map((p) => Number(p[0]));
+    const ys = points.map((p) => Number(p[1]));
+    return [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]];
+  }
+
+  function fitSelectedDistrict() {
+    if (!map || selectedDistrict === "all") {
+      fitStudyArea();
+      return;
+    }
+    const feature = (districtData?.features || []).find(
+      (x) => String(x.properties?.district_id || "") === String(selectedDistrict)
+    );
+    const bounds = geometryBounds(feature);
+    if (bounds) map.fitBounds(bounds, { padding: 52, duration: 650, maxZoom: 13.5 });
+  }
+
+  function setDistrict(id) {
+    selectedDistrict = id || "all";
+    selectedRoad = "all";
+    if ($("districtSelect")) $("districtSelect").value = selectedDistrict;
+    renderHistorySummary();
+    renderFloodSummary();
+    renderLegend();
+    renderFilters();
+    renderIncidents();
+    renderRoadCards();
+    updateIncidentMapSource();
+    updateFloodMapSource();
+    updateMapSelection();
+    fitSelectedDistrict();
+  }
 
   function safeStorageGet(key) {
     try { return window.localStorage ? window.localStorage.getItem(key) : null; }
@@ -109,7 +199,7 @@
   }
 
   function windowRoadCount(roadId, windowId = activeWindow) {
-    return windowIncidents(windowId).filter((item) => item.road_id === roadId).length;
+    return incidentsForDistrict(windowId).filter((item) => item.road_id === roadId).length;
   }
 
   function displayWindowLabel() {
@@ -129,7 +219,7 @@
 
   function incidentRoadIds(windowId = activeWindow) {
     const counts = {};
-    windowIncidents(windowId).forEach((item) => {
+    incidentsForDistrict(windowId).forEach((item) => {
       if (item.road_id) counts[item.road_id] = (counts[item.road_id] || 0) + 1;
     });
     return Object.entries(counts)
@@ -162,6 +252,7 @@
     };
     renderRank("historyTopRoads", w30.top_roads);
     renderRank("historyTopTypes", w30.top_event_types);
+    renderRank("historyTopDistricts", w30.top_districts);
   }
 
   function renderWindowControls() {
@@ -221,11 +312,25 @@
       + row.flood_30d + '</strong><em>' + row.distinct_flood_days_30d + ' วัน</em></div>'
     ).join("") || '<div class="empty-list">ยังไม่มี flood episode</div>';
 
-    $("floodHotspots").innerHTML = (floodData.hotspots_30d || []).slice(0, 8).map((row) =>
+    $("floodHotspots").innerHTML = (floodData.hotspots_30d || [])
+      .filter((row) => selectedDistrict === "all" || String(row.district_id || "") === String(selectedDistrict))
+      .slice(0, 8).map((row) =>
       '<div class="flood-rank-row"><span>' + escapeHtml(row.road_name || row.sample_title || "จุดท่วมซ้ำ")
       + '</span><strong>' + row.episode_count_30d + '</strong><em>'
       + row.distinct_flood_days_30d + ' วัน</em></div>'
     ).join("") || '<div class="empty-list">ยังไม่พบจุดท่วมซ้ำ</div>';
+
+    $("floodTopDistricts").innerHTML = (floodData.top_flood_districts_30d || []).slice(0, 8).map((row) =>
+      '<div class="flood-rank-row"><span>' + escapeHtml(row.district_name_th)
+      + '</span><strong>' + row.flood_30d + '</strong><em>' + row.distinct_flood_days_30d + ' วัน</em></div>'
+    ).join("") || '<div class="empty-list">ยังไม่มี flood episode</div>';
+
+    $("floodWatchDistricts").innerHTML = (floodData.district_watch?.top_profiles || []).slice(0, 10).map((row) =>
+      '<div class="watch-road-row"><span>' + escapeHtml(row.district_name_th)
+      + '</span><strong>' + (row.relative_watch_index == null ? "—" : Number(row.relative_watch_index).toFixed(1))
+      + '</strong><em>' + row.flood_30d + ' flood</em><i class="watch-badge '
+      + watchBadgeClass(row.relative_watch_class) + '">' + watchClassLabel(row.relative_watch_class) + '</i></div>'
+    ).join("") || '<div class="empty-list">ยังไม่มี district watch profile</div>';
 
     const tmd = floodData.tmd_forecast || {};
     const tmdMeta = floodData.sources?.tmd_nwp || {};
@@ -313,7 +418,7 @@
   function incidentGeoJSON() {
     return {
       type: "FeatureCollection",
-      features: windowIncidents()
+      features: incidentsForDistrict()
         .filter((incident) => Number.isFinite(Number(incident.longitude)) && Number.isFinite(Number(incident.latitude)))
         .map((incident) => ({
           type: "Feature",
@@ -328,7 +433,9 @@
             latest_start: incident.latest_start || "",
             event_type: incident.event_type || "",
             record_count: incident.record_count || 1,
-            cluster_scope: incident.cluster_scope || ""
+            cluster_scope: incident.cluster_scope || "",
+            district_id: incident.district_id || "",
+            district_name_th: incident.district_name_th || ""
           }
         }))
     };
@@ -358,7 +465,9 @@
   function tmdGridGeoJSON() {
     return {
       type: "FeatureCollection",
-      features: (floodData?.tmd_forecast?.grid_points || []).map((row) => ({
+      features: (floodData?.tmd_forecast?.grid_points || [])
+        .filter((row) => selectedDistrict === "all" || String(row.district_id || "") === String(selectedDistrict))
+        .map((row) => ({
         type: "Feature",
         geometry: {
           type: "Point",
@@ -366,7 +475,9 @@
         },
         properties: {
           next_24h_mm: Number(row.next_24h_mm || 0),
-          grid_id: row.grid_id || ""
+          grid_id: row.grid_id || "",
+          district_id: row.district_id || "",
+          district_name_th: row.district_name_th || ""
         }
       }))
     };
@@ -389,6 +500,7 @@
     return {
       type: "FeatureCollection",
       features: (floodData?.hotspots_30d || [])
+        .filter((row) => selectedDistrict === "all" || String(row.district_id || "") === String(selectedDistrict))
         .filter((row) => !sevenDay || Number(row.episode_count_7d || 0) >= 2)
         .map((row) => ({
           type: "Feature",
@@ -403,7 +515,9 @@
             episode_count_30d: row.episode_count_30d || 0,
             episode_count_7d: row.episode_count_7d || 0,
             distinct_days: row.distinct_flood_days_30d || 0,
-            latest_flood: row.latest_flood || ""
+            latest_flood: row.latest_flood || "",
+            district_id: row.district_id || "",
+            district_name_th: row.district_name_th || ""
           }
         }))
     };
@@ -465,7 +579,39 @@
   }
 
   function addMapLayers() {
-    if (!map || !networkData || !statusData) return;
+    if (!map || !networkData || !statusData || !districtData) return;
+
+    map.addSource("bangkok-districts", { type: "geojson", data: districtData });
+    map.addLayer({
+      id: "district-fill",
+      type: "fill",
+      source: "bangkok-districts",
+      paint: {
+        "fill-color": "#64748b",
+        "fill-opacity": 0.025
+      }
+    });
+    map.addLayer({
+      id: "district-outline",
+      type: "line",
+      source: "bangkok-districts",
+      paint: {
+        "line-color": "#64748b",
+        "line-width": 0.8,
+        "line-opacity": 0.42
+      }
+    });
+    map.addLayer({
+      id: "district-selected",
+      type: "fill",
+      source: "bangkok-districts",
+      filter: ["==", ["get", "district_id"], "__none__"],
+      paint: {
+        "fill-color": "#0ea5e9",
+        "fill-opacity": 0.10,
+        "fill-outline-color": "#0ea5e9"
+      }
+    });
 
     map.addSource("road-network", { type: "geojson", data: networkData });
     map.addLayer({
@@ -565,7 +711,7 @@
 
     map.on("click", (e) => {
       const features = map.queryRenderedFeatures(e.point, {
-        layers: ["tmd-precip-grid", "flood-hotspots", "flood-watch-roads", "confirmed-incidents", "road-network"]
+        layers: ["tmd-precip-grid", "flood-hotspots", "flood-watch-roads", "confirmed-incidents", "road-network", "district-fill"]
       });
       const feature = features[0];
       if (!feature) return;
@@ -625,12 +771,20 @@
       }
 
       const roadId = feature.properties?.road_id;
-      if (roadId) selectRoad(String(roadId));
+      if (roadId) {
+        selectRoad(String(roadId));
+        return;
+      }
+
+      if (feature.layer.id === "district-fill") {
+        const districtId = String(feature.properties?.district_id || "");
+        if (districtId) setDistrict(districtId);
+      }
     });
 
     map.on("mousemove", (e) => {
       const features = map.queryRenderedFeatures(e.point, {
-        layers: ["flood-hotspots", "confirmed-incidents", "road-network"]
+        layers: ["tmd-precip-grid", "flood-hotspots", "confirmed-incidents", "road-network", "district-fill"]
       });
       map.getCanvas().style.cursor = features.length ? "pointer" : "";
     });
@@ -653,8 +807,8 @@
     map = new maplibregl.Map({
       container: "interactiveMap",
       style: OPENFREEMAP_STYLE,
-      center: [100.68, 13.84],
-      zoom: 10.7,
+      center: [100.56, 13.75],
+      zoom: 9.45,
       minZoom: 8,
       maxZoom: 18,
       attributionControl: true
@@ -676,15 +830,15 @@
   }
 
   function filterRoadIds() {
-    const ids = [...priorityRoadIds()];
-    incidentRoadIds().forEach((id) => { if (!ids.includes(id)) ids.push(id); });
+    const ids = priorityRoadIds().filter(roadInSelectedDistrict);
+    incidentRoadIds().forEach((id) => { if (roadInSelectedDistrict(id) && !ids.includes(id)) ids.push(id); });
     if (selectedRoad !== "all" && !ids.includes(selectedRoad)) ids.push(selectedRoad);
     return ids;
   }
 
   function renderFilters() {
     const chips = [
-      { id: "all", label: "ทั้งหมด", count: windowIncidents().length },
+      { id: "all", label: "ทั้งหมด", count: incidentsForDistrict().length },
       ...filterRoadIds().map((id) => ({
         id,
         label: roadLabel(id).replace("ถนน", ""),
@@ -701,7 +855,7 @@
   }
 
   function renderIncidents() {
-    const incidents = windowIncidents().filter((x) => selectedRoad === "all" || x.road_id === selectedRoad);
+    const incidents = incidentsForDistrict().filter((x) => selectedRoad === "all" || x.road_id === selectedRoad);
     if (!incidents.length) {
       $("incidentList").innerHTML = '<div class="empty-list">ยังไม่พบเหตุที่ยืนยันได้ในตัวกรองนี้</div>';
       return;
@@ -715,6 +869,7 @@
         + '<div class="incident-title">' + escapeHtml(item.title || "เหตุการณ์") + "</div>"
         + "</div>"
         + '<div class="incident-meta">' + escapeHtml(roadLabel(item.road_id))
+        + (item.district_name_th ? " · " + escapeHtml(item.district_name_th) : "")
         + " · " + escapeHtml(formatThaiDate(item.latest_start))
         + escapeHtml(refs + duplicateText) + "</div>"
         + "</article>";
@@ -722,8 +877,8 @@
   }
 
   function cardRoadIds() {
-    const priority = priorityRoadIds();
-    const active = incidentRoadIds().filter((id) => !priority.includes(id));
+    const priority = priorityRoadIds().filter(roadInSelectedDistrict);
+    const active = incidentRoadIds().filter((id) => roadInSelectedDistrict(id) && !priority.includes(id));
     const ids = [...priority, ...active.slice(0, 8)];
     if (selectedRoad !== "all" && !ids.includes(selectedRoad)) ids.push(selectedRoad);
     return ids;
@@ -739,7 +894,7 @@
         + '" style="--road-color:' + roadColor(id) + '">'
         + '<div class="road-card-line"></div>'
         + "<h3>" + escapeHtml(road.display_name || id) + "</h3>"
-        + '<div class="road-th">' + (road.priority ? "PRIORITY ROAD" : "EXPANDED NETWORK") + "</div>"
+        + '<div class="road-th">' + (road.priority ? "FOCUS ROAD" : (road.network_tier || "BANGKOK NETWORK")) + "</div>"
         + '<div class="road-card-stats">'
         + '<div class="road-stat"><span>NOW INCIDENTS</span><strong>' + incidentsNow + "</strong></div>"
         + '<div class="road-stat"><span>LAST 7 DAYS</span><strong>' + incidents7d + "</strong></div>"
@@ -757,16 +912,32 @@
   function updateMapSelection() {
     if (!map || !mapReady || !map.getLayer("road-network")) return;
 
+    if (map.getLayer("district-selected")) {
+      map.setFilter(
+        "district-selected",
+        selectedDistrict === "all"
+          ? ["==", ["get", "district_id"], "__none__"]
+          : ["==", ["get", "district_id"], selectedDistrict]
+      );
+    }
+
+    const visibleRoadIds = selectedDistrict === "all" ? [] : districtRoadIds();
     if (selectedRoad === "all") {
       map.setFilter("road-selected", ["==", ["get", "road_id"], "__none__"]);
-      map.setPaintProperty("road-network", "line-opacity", 0.72);
+      map.setPaintProperty(
+        "road-network",
+        "line-opacity",
+        selectedDistrict === "all"
+          ? 0.72
+          : ["case", ["in", ["get", "road_id"], ["literal", visibleRoadIds]], 0.72, 0.07]
+      );
       map.setPaintProperty("confirmed-incidents", "circle-opacity", activeWindow === "now" ? 0.94 : 0.72);
     } else {
       map.setFilter("road-selected", ["==", ["get", "road_id"], selectedRoad]);
       map.setPaintProperty(
         "road-network",
         "line-opacity",
-        ["case", ["==", ["get", "road_id"], selectedRoad], 0.45, 0.14]
+        ["case", ["==", ["get", "road_id"], selectedRoad], 0.45, 0.10]
       );
       map.setPaintProperty(
         "confirmed-incidents",
@@ -774,6 +945,15 @@
         ["case", ["==", ["get", "road_id"], selectedRoad], activeWindow === "now" ? 0.98 : 0.82, 0.14]
       );
       map.setPaintProperty("road-selected", "line-color", roadColor(selectedRoad));
+    }
+
+    if (map.getLayer("flood-watch-roads")) {
+      map.setFilter(
+        "flood-watch-roads",
+        selectedDistrict === "all"
+          ? null
+          : ["in", ["get", "road_id"], ["literal", visibleRoadIds]]
+      );
     }
   }
 
@@ -811,18 +991,22 @@
   async function load() {
     try {
       setupTheme();
-      const [statusRes, networkRes, historyRes, floodRes] = await Promise.all([
+      const [statusRes, networkRes, historyRes, floodRes, districtRes] = await Promise.all([
         fetch("data/latest_status.json", { cache: "no-store" }),
         fetch("data/core_roads.geojson", { cache: "no-store" }),
         fetch("data/recent_incident_intelligence.json", { cache: "no-store" }),
-        fetch("data/flood_intelligence.json", { cache: "no-store" })
+        fetch("data/flood_intelligence.json", { cache: "no-store" }),
+        fetch("data/bangkok_districts.geojson", { cache: "no-store" })
       ]);
-      if (!statusRes.ok || !networkRes.ok || !historyRes.ok || !floodRes.ok) throw new Error("data artifact not available");
+      if (!statusRes.ok || !networkRes.ok || !historyRes.ok || !floodRes.ok || !districtRes.ok) throw new Error("data artifact not available");
       statusData = await statusRes.json();
       networkData = await networkRes.json();
       historyData = await historyRes.json();
       floodData = await floodRes.json();
+      districtData = await districtRes.json();
+      if ((districtData.features || []).length !== 50) throw new Error("Bangkok district geometry is incomplete");
       renderMetrics();
+      renderDistrictSelect();
       renderHistorySummary();
       renderFloodSummary();
       renderLegend();
