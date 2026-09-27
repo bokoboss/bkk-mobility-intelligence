@@ -31,8 +31,13 @@ class SpatialMatchingTests(unittest.TestCase):
             [{"road_id": "ram_inthra", "distance_m": 25.0}],
             80,
             150,
+            {"ram_inthra": {"304"}},
         )
-        self.assertEqual(out["network_match_class"], "GEOMETRY+TITLE_STRONG")
+        self.assertEqual(
+            out["network_match_class"],
+            "GEOMETRY+TITLE_CONFIRMED",
+        )
+        self.assertTrue(out["network_confirmed"])
 
     def test_far_event_is_context_only(self):
         event = {"road_title_matches": ["ram_inthra"]}
@@ -41,6 +46,7 @@ class SpatialMatchingTests(unittest.TestCase):
             [{"road_id": "ram_inthra", "distance_m": 450.0}],
             80,
             150,
+            {"ram_inthra": {"304"}},
         )
         self.assertEqual(out["network_match_class"], "NETWORK_CONTEXT_ONLY")
         self.assertIsNone(out["network_road_id"])
