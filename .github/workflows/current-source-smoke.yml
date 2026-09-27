@@ -34,6 +34,15 @@ jobs:
       - name: Fetch current source bundle
         run: python scripts/live/fetch_current_bundle.py
 
+      - name: Fetch documented Longdo Traffic Index context
+        run: python scripts/live/fetch_longdo_traffic_index.py
+
+      - name: Audit 2026 Longdo Traffic Index history
+        run: python scripts/audit/audit_longdo_traffic_index_history.py
+
+      - name: Fetch iTIC/Longdo camera metadata
+        run: python scripts/live/fetch_itic_cameras.py
+
       - name: Fetch OSM core-road geometry
         run: python scripts/spatial/fetch_osm_network.py
 
@@ -79,5 +88,6 @@ jobs:
             data/raw/current/
             data/processed/osm/
             data/processed/current_speed/
+            data/raw/current_context/
           if-no-files-found: warn
           retention-days: 3
