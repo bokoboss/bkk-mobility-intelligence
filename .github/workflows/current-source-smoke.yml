@@ -43,6 +43,9 @@ jobs:
       - name: Audit 2026 Longdo Traffic Index history
         run: python scripts/audit/audit_longdo_traffic_index_history.py
 
+      - name: Audit documented 2026 Longdo event-history endpoint
+        run: python scripts/audit/audit_longdo_event_history_endpoint.py
+
       - name: Fetch iTIC/Longdo camera metadata
         run: python scripts/live/fetch_itic_cameras.py
 
