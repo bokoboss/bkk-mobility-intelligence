@@ -1,5 +1,7 @@
 name: Current Source Smoke
 
+# Flood/Rain Intelligence v0.1 validated for Pages publication (2026-09-27)
+
 on:
   workflow_dispatch:
     inputs:
