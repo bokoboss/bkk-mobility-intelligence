@@ -49,6 +49,12 @@ jobs:
       - name: Analyze Longdo Traffic Index baseline
         run: python scripts/analysis/analyze_longdo_traffic_index.py
 
+      - name: Restore validated OSM geometry cache
+        uses: actions/cache@v4
+        with:
+          path: data/processed/osm/core_roads.geojson
+          key: osm-core-roads-v2-${{ hashFiles('config/study_area.json') }}
+
       - name: Fetch OSM core-road geometry
         run: python scripts/spatial/fetch_osm_network.py
 
