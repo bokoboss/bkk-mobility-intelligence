@@ -275,6 +275,12 @@ def main() -> int:
     anchor = dt.datetime.fromisoformat(manifest["anchor_time_ict"])
     if anchor.tzinfo is None:
         anchor = anchor.replace(tzinfo=ICT)
+    coverage_status = manifest.get("coverage_status", "UNKNOWN")
+    if coverage_status != "CURRENT":
+        raise RuntimeError(
+            "recent history source is not current enough for 7D/30D analytics: "
+            + str(coverage_status)
+        )
 
     clusters = build_episode_clusters(events)
     seven = select_window(clusters, anchor, 7)
@@ -305,6 +311,10 @@ def main() -> int:
             ),
         },
         "quality": {
+            "coverage_status": coverage_status,
+            "coverage_lag_minutes": manifest.get("coverage_lag_minutes"),
+            "pages_fetched": manifest.get("pages_fetched"),
+            "source_max_reported_at": manifest.get("source_max_reported_at"),
             "matched_event_rows_input": len(events),
             "episode_clusters_30d_source": len(clusters),
             "update_dedup_rule": (

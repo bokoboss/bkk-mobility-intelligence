@@ -2,13 +2,19 @@
 
 ## Source
 
-The documented current-year Longdo event-history download is streamed from:
+The primary recent-history source is the same public JSON endpoint used by
+Longdo Traffic's **Search for Events** interface:
 
-`https://event.longdo.com/feed/2026`
+`https://traffic.longdo.com/event.json`
 
-The annual CSV is **not** committed or persisted in full. The ingestion step
-streams rows, keeps only events whose start timestamp is within the last 30 days,
-then applies the Expanded V1 study-area bbox before spatial matching.
+The site JavaScript submits `page`, Unix `from` / `to`, `ordered`,
+`eventtype`, and `pagger` parameters. The POC requests up to 1,000 records
+per page, paginates until the date-range result is exhausted, and persists only
+records inside Expanded V1.
+
+The annual `https://event.longdo.com/feed/2026` CSV remains useful as an
+archive/fallback, but is not used for live 7D/30D metrics because its event
+coverage was observed to lag the live search database.
 
 ## Time semantics
 
@@ -53,3 +59,11 @@ visually separated from current incidents. The history panel shows:
 A rise in reported incidents does not by itself mean the road became less safe
 or more congested. Reporting intensity, event mix and exposure are not yet
 normalized.
+
+
+## Freshness gate
+
+The ingestion manifest compares the newest `createtime` returned by
+`/event.json` with the live-feed retrieval anchor. 7D/30D analytics are built
+only when the recent-search source is within three hours of the anchor.
+Otherwise the pipeline fails closed instead of rendering misleading zero counts.

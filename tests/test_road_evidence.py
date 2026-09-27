@@ -22,6 +22,10 @@ class RoadEvidenceTests(unittest.TestCase):
         event = {"title": "น้ำท่วมทางหลวง 351 ช่วงมหาวิทยาลัยเกษตรศาสตร์ - คันนายาว"}
         self.assertEqual(match.event_route_refs(event), {"351"})
 
+    def test_direct_route_ref_field(self):
+        event = {"title": "เหตุบนทางหลวง", "route_refs": ["351"]}
+        self.assertEqual(match.event_route_refs(event), {"351"})
+
     def test_route_and_geometry_confirm(self):
         event = {"title": "น้ำท่วมทางหลวง 351", "road_title_matches": []}
         candidate = {

@@ -97,6 +97,13 @@ def event_route_refs(event: dict[str, Any]) -> set[str]:
     text = event_text(event)
     refs = set(TH_ROUTE_RE.findall(text))
     refs.update(EN_ROUTE_RE.findall(text))
+    direct = event.get("route_refs") or event.get("routeno") or []
+    if isinstance(direct, str):
+        direct = re.split(r"[;,/ ]+", direct)
+    for value in direct:
+        value = str(value or "").strip()
+        if value.isdigit():
+            refs.add(value)
     return refs
 
 
