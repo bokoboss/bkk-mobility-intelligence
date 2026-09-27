@@ -25,9 +25,9 @@ import geo_admin
 
 EARTH_M = 6371008.8
 ENDPOINTS = [
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
 ]
 USER_AGENT = "bkk-mobility-intelligence-citywide/1.0"
 
@@ -36,8 +36,10 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--config", type=Path, default=Path("config/study_area.json"))
     p.add_argument("--output", type=Path, default=Path("data/processed/osm/core_roads.geojson"))
-    p.add_argument("--timeout", type=float, default=35.0)
+    p.add_argument("--timeout", type=float, default=25.0)
     p.add_argument("--endpoint", action="append", default=[])
+    p.add_argument("--cache-dir", type=Path, default=Path("data/cache/osm_bangkok"))
+    p.add_argument("--refresh", action="store_true")
     return p.parse_args()
 
 
@@ -137,17 +139,13 @@ def build_query(config: dict[str, Any], bbox: dict[str, float] | None = None) ->
     b = bbox or config["bbox_wgs84"]
     box = f'{b["min_lat"]},{b["min_lon"]},{b["max_lat"]},{b["max_lon"]}'
     cls = class_regex(config)
-    priority = exact_priority_names(config)
-    priority_re = "^(" + "|".join(re.escape(x) for x in priority) + ")$" if priority else "^$"
-    return f"""[out:json][timeout:30];
+    return f"""[out:json][timeout:25][maxsize:268435456];
 (
   way["highway"~"{cls}"]["name"]({box});
-  way["highway"~"{cls}"]["name:th"]({box});
-  way["highway"~"{cls}"]["name:en"]({box});
-  way["highway"]["name"~"{priority_re}",i]({box});
-  way["highway"]["name:th"~"{priority_re}",i]({box});
+  way["highway"~"{cls}][!"name"]["name:th"]({box});
+  way["highway"~"{cls}][!"name"]["name:en"]({box});
 );
-out tags geom;"""
+out tags geom qt;"""
 
 
 def fetch_overpass(endpoint: str, query: str, timeout: float) -> dict[str, Any]:
@@ -160,15 +158,82 @@ def fetch_overpass(endpoint: str, query: str, timeout: float) -> dict[str, Any]:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def fetch_tile(endpoints: list[str], query: str, timeout: float) -> tuple[dict[str, Any], str, list[dict[str, str]]]:
+def valid_payload(payload: Any) -> bool:
+    return (
+        isinstance(payload, dict)
+        and isinstance(payload.get("elements"), list)
+        and not payload.get("remark")
+    )
+
+
+def load_tile_cache(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if valid_payload(payload) else None
+
+
+def write_tile_cache(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+
+def fetch_tile(
+    endpoints: list[str],
+    query: str,
+    timeout: float,
+    cache_path: Path | None = None,
+) -> tuple[dict[str, Any], str, list[dict[str, str]]]:
+    if cache_path is not None:
+        cached = load_tile_cache(cache_path)
+        if cached is not None:
+            return cached, "CACHE", []
+
     errors = []
     for endpoint in endpoints:
         try:
-            return fetch_overpass(endpoint, query, timeout), endpoint, errors
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            payload = fetch_overpass(endpoint, query, timeout)
+            if not valid_payload(payload):
+                raise RuntimeError(
+                    "Overpass response contained a remark or invalid elements payload"
+                )
+            if cache_path is not None:
+                write_tile_cache(cache_path, payload)
+            return payload, endpoint, errors
+        except (
+            urllib.error.HTTPError,
+            urllib.error.URLError,
+            TimeoutError,
+            json.JSONDecodeError,
+            RuntimeError,
+        ) as exc:
             errors.append({"endpoint": endpoint, "error": f"{type(exc).__name__}: {exc}"})
-            time.sleep(0.5)
+            time.sleep(0.35)
     raise RuntimeError("all Overpass endpoints failed: " + "; ".join(x["error"] for x in errors))
+
+
+def existing_network(path: Path, config: dict[str, Any]) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    props = doc.get("properties") or {}
+    if (
+        doc.get("type") == "FeatureCollection"
+        and doc.get("name") == config.get("id")
+        and props.get("district_count") == int(config["admin_geometry"].get("district_count", 50))
+        and doc.get("features")
+    ):
+        return doc
+    return None
 
 
 def haversine_m(a: list[float], b: list[float]) -> float:
@@ -345,12 +410,40 @@ def main() -> int:
     if len(districts) != int(config["admin_geometry"].get("district_count", 50)):
         raise RuntimeError(f"district geometry count mismatch: {len(districts)}")
 
+    if not args.refresh:
+        existing = existing_network(args.output, config)
+        if existing is not None:
+            catalog = (existing.get("properties") or {}).get("road_catalog") or []
+            print(json.dumps({
+                "geometry_source": "FINAL_CACHE",
+                "road_count": len(catalog),
+                "feature_count": len(existing.get("features") or []),
+                "district_count": (existing.get("properties") or {}).get("district_count"),
+                "output": str(args.output),
+            }, ensure_ascii=False, indent=2))
+            return 0
+
     endpoints = args.endpoint or ENDPOINTS
     elements_by_id: dict[int, dict[str, Any]] = {}
     tile_results = []
+    failures = []
     for tile in tile_bboxes(config):
         query = build_query(config, tile)
-        payload, endpoint, errors = fetch_tile(endpoints, query, args.timeout)
+        cache_path = args.cache_dir / f'tile_r{tile["row"]}_c{tile["col"]}.json'
+        try:
+            payload, endpoint, errors = fetch_tile(
+                endpoints, query, args.timeout, cache_path=cache_path
+            )
+        except RuntimeError as exc:
+            failure = {
+                "row": tile["row"],
+                "col": tile["col"],
+                "error": str(exc),
+            }
+            failures.append(failure)
+            print(json.dumps({"tile_failure": failure}, ensure_ascii=False))
+            continue
+
         count_before = len(elements_by_id)
         for el in payload.get("elements", []):
             if el.get("type") == "way" and isinstance(el.get("id"), int):
@@ -359,11 +452,18 @@ def main() -> int:
             "row": tile["row"],
             "col": tile["col"],
             "endpoint": endpoint,
+            "cache_hit": endpoint == "CACHE",
             "element_count": len(payload.get("elements", [])),
             "new_way_count": len(elements_by_id) - count_before,
             "fallback_errors": errors,
         })
         print(json.dumps(tile_results[-1], ensure_ascii=False))
+
+    if failures:
+        raise RuntimeError(
+            f"Bangkok network incomplete: {len(failures)} of "
+            f"{len(tile_bboxes(config))} tiles failed; successful tiles were cached"
+        )
 
     raw = raw_features(list(elements_by_id.values()), config, districts)
     selected = select_network_features(raw, config)
@@ -382,6 +482,10 @@ def main() -> int:
             "admin_geometry_path": str(admin_path),
             "district_count": len(districts),
             "tile_count": len(tile_results),
+            "tile_grid": {
+                "rows": int(config.get("network", {}).get("tile_rows", 4)),
+                "cols": int(config.get("network", {}).get("tile_cols", 4)),
+            },
             "tile_results": tile_results,
             "road_catalog": catalog,
         },

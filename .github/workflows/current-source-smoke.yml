@@ -89,8 +89,25 @@ jobs:
           path: data/processed/osm/core_roads.geojson
           key: osm-bangkok-citywide-v1-${{ hashFiles('config/study_area.json', 'data/reference/bangkok_districts.geojson') }}
 
+      - name: Restore Bangkok OSM tile cache
+        id: osm_tile_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache/osm_bangkok/
+          key: osm-bangkok-tiles-${{ hashFiles('config/study_area.json', 'data/reference/bangkok_districts.geojson') }}-${{ github.sha }}
+          restore-keys: |
+            osm-bangkok-tiles-${{ hashFiles('config/study_area.json', 'data/reference/bangkok_districts.geojson') }}-
+
       - name: Fetch Bangkok-wide OSM road geometry
+        id: fetch_bangkok_osm
         run: python scripts/spatial/fetch_bangkok_network.py
+
+      - name: Save Bangkok OSM tile cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/cache/osm_bangkok/
+          key: osm-bangkok-tiles-${{ hashFiles('config/study_area.json', 'data/reference/bangkok_districts.geojson') }}-${{ github.sha }}
 
       - name: Match current events to core-road geometry
         shell: bash

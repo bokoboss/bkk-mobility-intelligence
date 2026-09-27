@@ -25,8 +25,8 @@
       "secondary",
       "tertiary"
     ],
-    "tile_rows": 3,
-    "tile_cols": 3,
+    "tile_rows": 4,
+    "tile_cols": 4,
     "min_group_length_m": 900,
     "min_group_length_m_strategic": 300,
     "min_group_length_m_urban": 1200,
@@ -41,9 +41,17 @@
     {
       "id": "ram_inthra",
       "display_name": "ถนนรามอินทรา",
-      "aliases": ["รามอินทรา", "ram inthra", "ramintra"],
-      "osm_exact_names": ["ถนนรามอินทรา"],
-      "route_refs": ["304"],
+      "aliases": [
+        "รามอินทรา",
+        "ram inthra",
+        "ramintra"
+      ],
+      "osm_exact_names": [
+        "ถนนรามอินทรา"
+      ],
+      "route_refs": [
+        "304"
+      ],
       "priority": true
     },
     {
@@ -58,23 +66,40 @@
         "prasert-manukitch",
         "prasert manukitch"
       ],
-      "osm_exact_names": ["ถนนประเสริฐมนูกิจ"],
-      "route_refs": ["351"],
+      "osm_exact_names": [
+        "ถนนประเสริฐมนูกิจ"
+      ],
+      "route_refs": [
+        "351"
+      ],
       "priority": true
     },
     {
       "id": "pradit_manutham",
       "display_name": "ถนนประดิษฐ์มนูธรรม",
-      "aliases": ["ประดิษฐ์มนูธรรม", "เลียบทางด่วน", "pradit manutham", "praditmanutham"],
-      "osm_exact_names": ["ถนนประดิษฐ์มนูธรรม"],
+      "aliases": [
+        "ประดิษฐ์มนูธรรม",
+        "เลียบทางด่วน",
+        "pradit manutham",
+        "praditmanutham"
+      ],
+      "osm_exact_names": [
+        "ถนนประดิษฐ์มนูธรรม"
+      ],
       "route_refs": [],
       "priority": true
     },
     {
       "id": "nuan_chan",
       "display_name": "ถนนนวลจันทร์",
-      "aliases": ["นวลจันทร์", "nuan chan", "nuanchan"],
-      "osm_exact_names": ["ถนนนวลจันทร์"],
+      "aliases": [
+        "นวลจันทร์",
+        "nuan chan",
+        "nuanchan"
+      ],
+      "osm_exact_names": [
+        "ถนนนวลจันทร์"
+      ],
       "route_refs": [],
       "priority": true
     }
