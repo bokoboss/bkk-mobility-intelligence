@@ -91,6 +91,7 @@ jobs:
             --output "$run_dir/incidents.confirmed_clusters.json"
 
       - name: Build recent 7/30-day incident intelligence
+        if: ${{ !contains(github.event.head_commit.message, '[audit-search]') }}
         shell: bash
         run: |
           python scripts/history/fetch_recent_event_history.py
@@ -111,9 +112,11 @@ jobs:
             --max-points 8
 
       - name: Build frontend-neutral Now snapshot
+        if: ${{ !contains(github.event.head_commit.message, '[audit-search]') }}
         run: python scripts/build/build_now_snapshot.py
 
       - name: Build Now dashboard preview
+        if: ${{ !contains(github.event.head_commit.message, '[audit-search]') }}
         run: |
           python scripts/build/build_static_site.py
           test -s dist/index.html
