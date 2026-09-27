@@ -1,74 +1,147 @@
-# First Live Source Smoke — 2026-09-27
+# First Live Source Validation — 2026-09-27
 
-## Live validation runs
+## Validated run
 
-### Run 1 — initial source qualification
+- GitHub Actions run: `36300637185` (run #8)
+- Commit: `a02762bb8261de6e169182cdc4c2222b6609d4ef`
+- Time: 2026-09-27 06:37 UTC (13:37 ICT)
+- Workflow conclusion: **success**
+- Pilot area: Ram Inthra / Prasert-Manukitch / Pradit Manutham / Nuan Chan
 
-- GitHub Actions run: `36299964884`
-- Time: 2026-09-27 06:23 UTC (13:23 ICT)
-- Pipeline result: `PARTIAL`
+## 1. Latest iTIC / Longdo events — PASS
 
-The iTIC / Longdo event JSON returned HTTP 200 with 745 records,
-all with coordinates. The broad pilot bbox contained 41 records. The
-latest event start was 13:21 ICT, about 0.05 h before retrieval.
+The live source `https://event.longdo.com/feed/json` was successfully
+retrieved and parsed.
 
-The Free-Longdo traffic-status request returned HTTP 401.
+Observed in the validated run:
 
-### Run 3 — hardened matcher / redirect diagnostics
-
-- GitHub Actions run: `36300151445`
-- Commit: `e946b64bd5d5e37d2b2fd0628220c5c292c05989`
-- Workflow conclusion: `success`
-- Time: 2026-09-27 06:27 UTC (13:27 ICT)
-
-Events:
-
-- HTTP 200
-- payload 1,555,073 bytes
-- broad study-area records: 41
-- latest event start: 2026-09-27 13:21 ICT
-- latest-event age at retrieval: 0.11 h
+- HTTP: `200`
+- payload size: `1,525,575` bytes
+- broad study-area records: `41`
+- latest event start: `2026-09-27 13:27:05 ICT`
+- latest-event age at retrieval: `0.17 h`
 - format: JSON
 
-The stricter text-evidence rule yielded:
+The broad bbox count is **not** treated as the number of incidents on the
+four core roads.
 
-- TITLE_STRONG: 1
-- DESCRIPTION_CONTEXT: 9
-- UNMATCHED: 31
+## 2. Exact OSM core-road geometry — PASS
 
-The one title-strong core-road record was:
+The Overpass extraction now uses exact configured main-road names instead
+of substring aliases, preventing `ซอยรามอินทรา...`, similarly named roads,
+and side streets from contaminating the core network.
 
-- 2026-09-26 22:30 — น้ำท่วม รามอินทรา 5 แยก 42
+Exact OSM ways:
 
-The description-only cases were largely false road-name signals caused by
-responding-agency text such as หมวดทางหลวงรามอินทรา. They are now
-context-only and cannot become road attribution without geometry.
+- Ram Inthra: `116`
+- Pradit Manutham: `79`
+- Prasert-Manukitch: `95`
+- Nuan Chan: `12`
+- Total: `302`
+- Missing configured roads: none
 
-Free-Longdo traffic status:
+OSM-derived outputs preserve OpenStreetMap attribution and ODbL metadata.
 
-- requested URL: https://traffic.longdo.com/api/feed/free
-- final URL: https://live.iticfoundation.org/feed/free
-- HTTP 401 Unauthorized
-- usable payload: none
+## 3. Core-road incident attribution — PASS
 
-This establishes that current speed is an access dependency, not a parser
-failure.
+Road attribution now requires geometry plus road-identity evidence.
 
-## Current Phase 0 decision
+Supporting route identities used by the pilot:
 
-Passed:
+- Highway 304 supports Ram Inthra identity within the configured pilot
+  section.
+- Highway 351 supports Prasert-Manukitch identity.
 
-- live event connectivity and currentness;
-- event parsing and freshness metadata;
-- broad study-area extraction;
-- title-vs-description QA;
-- live GitHub Actions environment;
-- ephemeral raw-data artifact capture.
+Matching result from 41 broad-area event records:
 
-Next gate:
+- `NETWORK_CONTEXT_ONLY`: 30
+- `GEOMETRY_ONLY_CANDIDATE`: 1
+- `GEOMETRY+ROUTE_CONFIRMED`: 10
 
-1. fetch exact OSM geometry for the four core roads;
-2. match events by distance to road geometry;
-3. keep broad-bbox events as context only;
-4. use a qualified keyed/alternative current-speed source;
-5. build current-vs-baseline analytics only after current speed is qualified.
+Candidate road records inside the geometric threshold:
+
+- Ram Inthra: 6
+- Prasert-Manukitch: 5
+
+Confirmed road records:
+
+- Ram Inthra: **5**
+- Prasert-Manukitch: **5**
+
+One record located near Ram Inthra but titled `ถนนแจ้งวัฒนะ` remains a
+geometry-only candidate and is **not** counted as a confirmed Ram Inthra
+incident.
+
+## 4. Duplicate/update clustering — PASS
+
+The feed can contain multiple records representing the same physical
+incident/location. Confirmed records are therefore clustered by:
+
+`confirmed road + event type + normalized title + rounded coordinate`
+
+Validated run result:
+
+- confirmed source records: **10**
+- distinct confirmed incident clusters: **7**
+- Ram Inthra: **2 distinct incidents**
+- Prasert-Manukitch: **5 distinct incidents**
+
+These cluster counts are suitable for the Phase 0 incident-side KPI,
+subject to the stated source-completeness limitation.
+
+## 5. Current traffic speed/status — BLOCKED ON ACCESS
+
+The documented Free-Longdo status endpoint:
+
+`https://traffic.longdo.com/api/feed/free`
+
+redirects to:
+
+`https://live.iticfoundation.org/feed/free`
+
+and returns:
+
+- HTTP `401 Unauthorized`
+- no usable anonymous payload
+
+This has been reproduced across live smoke runs, so it is treated as an
+access dependency rather than a parser defect.
+
+An optional Longdo Map REST traffic-speed adapter is already implemented at:
+
+`scripts/live/fetch_longdo_traffic_speed.py`
+
+It uses the official `traffic/speed` service and is enabled automatically
+when repository secret `LONGDO_MAP_API_KEY` is present. No API key is
+stored in this repository.
+
+## Phase 0 status
+
+### Passed
+
+- latest event connectivity and currentness
+- live event JSON parsing
+- source/retrieval freshness metadata
+- exact four-road OSM geometry
+- broad-area vs core-road separation
+- geometry + route-identity incident confirmation
+- duplicate/update clustering
+- live GitHub Actions validation
+- ephemeral raw-data artifact capture without committing raw live data
+
+### Remaining dependency
+
+**Current traffic speed/status** is the main missing input before building:
+
+- road/segment current condition
+- current-vs-normal comparison
+- incident traffic impact
+- cross-road spillover/diversion analysis
+- the first real “Now” dashboard
+
+## Next gate
+
+Provide a qualified real-time speed source. The current implementation is
+ready to use a Longdo Map API key through GitHub secret
+`LONGDO_MAP_API_KEY`; alternative sources can be added behind the same
+adapter boundary without changing the incident pipeline.
