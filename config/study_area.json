@@ -1,0 +1,36 @@
+{
+  "id": "ram_inthra_network_v1",
+  "name": "Ram Inthra - Prasert-Manukitch - Pradit Manutham - Nuan Chan",
+  "bbox_wgs84": {
+    "min_lon": 100.575,
+    "min_lat": 13.785,
+    "max_lon": 100.700,
+    "max_lat": 13.895
+  },
+  "roads": [
+    {
+      "id": "ram_inthra",
+      "display_name": "Ram Inthra Road",
+      "aliases": ["รามอินทรา", "ram inthra", "ramintra"]
+    },
+    {
+      "id": "prasert_manukitch",
+      "display_name": "Prasert-Manukitch Road",
+      "aliases": ["ประเสริฐมนูกิจ", "เกษตร-นวมินทร์", "เกษตร–นวมินทร์", "kaset-navamin", "kaset nawa min", "prasert-manukitch", "prasert manukitch"]
+    },
+    {
+      "id": "pradit_manutham",
+      "display_name": "Pradit Manutham Road",
+      "aliases": ["ประดิษฐ์มนูธรรม", "เลียบทางด่วน", "pradit manutham", "praditmanutham"]
+    },
+    {
+      "id": "nuan_chan",
+      "display_name": "Nuan Chan Road",
+      "aliases": ["นวลจันทร์", "nuan chan", "nuanchan"]
+    }
+  ],
+  "notes": [
+    "The bbox is an extraction envelope, not a road-attribution rule.",
+    "Final road/segment matching must use road geometry and, when available, direction/heading."
+  ]
+}
