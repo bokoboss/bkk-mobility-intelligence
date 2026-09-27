@@ -35,6 +35,9 @@ def network_roads(network: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "aliases": item.get("aliases") or [],
             "route_refs": item.get("route_refs") or [],
             "highway_classes": item.get("highway_classes") or [],
+            "network_tier": item.get("network_tier"),
+            "district_ids": item.get("district_ids") or [],
+            "district_names": item.get("district_names") or [],
             "total_length_m": item.get("total_length_m"),
             "confirmed_incidents": [],
         }
@@ -65,6 +68,9 @@ def main() -> int:
                 "aliases": road.get("aliases") or [],
                 "route_refs": road.get("route_refs") or [],
                 "highway_classes": [],
+                "network_tier": "FOCUS",
+                "district_ids": [],
+                "district_names": [],
                 "total_length_m": None,
                 "confirmed_incidents": [],
             },
@@ -79,6 +85,9 @@ def main() -> int:
                 "aliases": [],
                 "route_refs": cluster.get("event_route_refs") or [],
                 "highway_classes": [],
+                "network_tier": None,
+                "district_ids": [cluster.get("district_id")] if cluster.get("district_id") else [],
+                "district_names": [cluster.get("district_name_th")] if cluster.get("district_name_th") else [],
                 "total_length_m": None,
                 "confirmed_incidents": [],
             }
@@ -105,8 +114,35 @@ def main() -> int:
         1 for road in roads.values() if road.get("confirmed_incident_count", 0) > 0
     )
 
+    district_counts: dict[str, dict[str, Any]] = {}
+    for cluster in clusters_doc.get("clusters", []):
+        did = str(cluster.get("district_id") or "")
+        if not did:
+            continue
+        row = district_counts.setdefault(
+            did,
+            {
+                "district_id": did,
+                "district_name_th": cluster.get("district_name_th") or did,
+                "district_name_en": cluster.get("district_name_en") or "",
+                "confirmed_incident_count": 0,
+            },
+        )
+        row["confirmed_incident_count"] += 1
+    district_rows = sorted(
+        district_counts.values(),
+        key=lambda x: (-x["confirmed_incident_count"], x["district_name_th"]),
+    )
+
+    strategic_count = sum(
+        1 for road in roads.values() if road.get("network_tier") == "STRATEGIC"
+    )
+    urban_count = sum(
+        1 for road in roads.values() if road.get("network_tier") == "URBAN"
+    )
+
     result = {
-        "schema": "bkk-mobility-now-v0.2",
+        "schema": "bkk-mobility-now-v0.3",
         "study_area_id": manifest.get("study_area_id"),
         "study_area_name": config.get("name"),
         "study_area_bbox_wgs84": config.get("bbox_wgs84"),
@@ -141,6 +177,14 @@ def main() -> int:
             "priority_road_count": priority_count,
             "dynamic_road_count": len(roads) - priority_count,
             "roads_with_confirmed_incidents": active_roads,
+            "strategic_road_count": strategic_count,
+            "urban_road_count": urban_count,
+            "district_count": int((config.get("admin_geometry") or {}).get("district_count", 50)),
+        },
+        "district_summary": {
+            "district_count": int((config.get("admin_geometry") or {}).get("district_count", 50)),
+            "districts_with_confirmed_incidents": len(district_rows),
+            "top_current_districts": district_rows[:15],
         },
         "network_incidents": {
             "confirmed_record_count": clusters_doc["summary"]["confirmed_record_count"],
@@ -162,7 +206,7 @@ def main() -> int:
                 "EXPERIMENTAL" if speed is not None else "BLOCKED_ON_PROVIDER_ACCESS"
             ),
             "current_vs_baseline_segment": "BLOCKED_ON_SEGMENT_SPEED",
-            "now_dashboard": "READY_FOR_EXPANDED_INCIDENT_AND_CONTEXT_POC",
+            "now_dashboard": "READY_FOR_BANGKOK_WIDE_INCIDENT_AND_CONTEXT_POC",
         },
     }
 

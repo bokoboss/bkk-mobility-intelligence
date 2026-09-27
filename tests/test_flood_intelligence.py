@@ -96,5 +96,20 @@ class FloodIntelligenceTests(unittest.TestCase):
             {"HIGH_RELATIVE_WATCH", "ELEVATED_RELATIVE_WATCH"},
         )
 
+    def test_district_watch_profile(self):
+        districts = [
+            {"district_id": "1001", "district_name_th": "A", "flood_30d": 10, "flood_7d": 3, "distinct_flood_days_30d": 4},
+            {"district_id": "1002", "district_name_th": "B", "flood_30d": 1, "flood_7d": 0, "distinct_flood_days_30d": 1},
+        ]
+        tmd_grid = {
+            "district_forecast": [
+                {"district_id": "1001", "district_name_th": "A", "next_24h_mean_mm": 20, "next_24h_p90_mm": 30, "next_24h_max_mm": 40},
+                {"district_id": "1002", "district_name_th": "B", "next_24h_mean_mm": 5, "next_24h_p90_mm": 7, "next_24h_max_mm": 8},
+            ]
+        }
+        profiles = flood.build_district_watch_profiles(districts, tmd_grid)
+        self.assertEqual(profiles[0]["district_id"], "1001")
+        self.assertGreater(profiles[0]["relative_watch_index"], profiles[1]["relative_watch_index"])
+
 if __name__ == "__main__":
     unittest.main()

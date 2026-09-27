@@ -35,7 +35,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       LONGDO_MAP_API_KEY: ${{ secrets.LONGDO_MAP_API_KEY }}
     steps:
@@ -164,7 +164,7 @@ jobs:
         run: |
           python scripts/build/build_static_site.py
           test -s dist/index.html
-          python -c 'import json; json.load(open("dist/data/latest_status.json", encoding="utf-8")); json.load(open("dist/data/core_roads.geojson", encoding="utf-8")); json.load(open("dist/data/recent_incident_intelligence.json", encoding="utf-8")); json.load(open("dist/data/flood_intelligence.json", encoding="utf-8"))'
+          python -c 'import json; json.load(open("dist/data/latest_status.json", encoding="utf-8")); json.load(open("dist/data/core_roads.geojson", encoding="utf-8")); json.load(open("dist/data/recent_incident_intelligence.json", encoding="utf-8")); json.load(open("dist/data/flood_intelligence.json", encoding="utf-8")); d=json.load(open("dist/data/bangkok_districts.geojson", encoding="utf-8")); assert len(d.get("features", [])) == 50'
 
       - name: Print latest summary
         if: always()

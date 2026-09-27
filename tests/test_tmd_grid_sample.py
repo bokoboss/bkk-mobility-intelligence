@@ -48,6 +48,16 @@ class TmdGridSampleTests(unittest.TestCase):
         self.assertEqual(points[0]["next_24h_mm"], 12.5)
         self.assertEqual(valid, "2026-09-28T00:00:00+00:00")
 
+    def test_district_aggregates(self):
+        rows = sample.district_aggregates([
+            {"district_id": "1001", "district_name_th": "พระนคร", "district_name_en": "Phra Nakhon", "next_24h_mm": 10.0},
+            {"district_id": "1001", "district_name_th": "พระนคร", "district_name_en": "Phra Nakhon", "next_24h_mm": 30.0},
+            {"district_id": "1002", "district_name_th": "ดุสิต", "district_name_en": "Dusit", "next_24h_mm": 5.0},
+        ])
+        self.assertEqual(rows[0]["district_id"], "1001")
+        self.assertEqual(rows[0]["next_24h_mean_mm"], 20.0)
+        self.assertEqual(rows[0]["next_24h_max_mm"], 30.0)
+
     def test_road_aggregate_uses_nearest_cells(self):
         points = [
             {"latitude": 13.80, "longitude": 100.60, "next_24h_mm": 10.0},

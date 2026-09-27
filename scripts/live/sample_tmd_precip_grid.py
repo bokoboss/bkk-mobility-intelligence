@@ -15,6 +15,7 @@ import json
 import math
 from pathlib import Path
 import shutil
+import sys
 import urllib.request
 from typing import Any
 
@@ -38,6 +39,11 @@ def parse_args() -> argparse.Namespace:
         "--network",
         type=Path,
         default=Path("data/processed/osm/core_roads.geojson"),
+    )
+    p.add_argument(
+        "--admin",
+        type=Path,
+        default=Path("data/reference/bangkok_districts.geojson"),
     )
     p.add_argument(
         "--cache-dir",
@@ -244,6 +250,62 @@ def road_aggregates(network: dict[str, Any], points: list[dict[str, Any]]) -> li
     return rows
 
 
+def assign_grid_districts(
+    points: list[dict[str, Any]],
+    districts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    out = []
+    for point in points:
+        row = dict(point)
+        district = None
+        for candidate in districts:
+            min_lon, min_lat, max_lon, max_lat = candidate["bbox"]
+            lon = float(row["longitude"])
+            lat = float(row["latitude"])
+            if not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat):
+                continue
+            if geo_admin.point_in_geometry(lon, lat, candidate["geometry"]):
+                district = candidate
+                break
+        row["district_id"] = district["district_id"] if district else None
+        row["district_name_th"] = district["district_name_th"] if district else None
+        row["district_name_en"] = district["district_name_en"] if district else None
+        out.append(row)
+    return out
+
+
+def district_aggregates(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for point in points:
+        did = str(point.get("district_id") or "")
+        if not did:
+            continue
+        row = groups.setdefault(
+            did,
+            {
+                "district_id": did,
+                "district_name_th": point.get("district_name_th") or did,
+                "district_name_en": point.get("district_name_en") or "",
+                "values": [],
+            },
+        )
+        row["values"].append(float(point["next_24h_mm"]))
+    result = []
+    for row in groups.values():
+        values = row.pop("values")
+        result.append(
+            {
+                **row,
+                "grid_cell_count": len(values),
+                "next_24h_mean_mm": round(sum(values) / len(values), 2),
+                "next_24h_p90_mm": round(percentile(values, 0.9) or 0.0, 2),
+                "next_24h_max_mm": round(max(values), 2),
+            }
+        )
+    result.sort(key=lambda x: (-x["next_24h_max_mm"], x["district_name_th"]))
+    return result
+
+
 def unavailable_result(context: dict[str, Any], reason: str) -> dict[str, Any]:
     return {
         "schema": "tmd-precip-grid-sample-v0.1",
@@ -254,6 +316,7 @@ def unavailable_result(context: dict[str, Any], reason: str) -> dict[str, Any]:
         "not_observed_rainfall": True,
         "grid_points": [],
         "road_forecast": [],
+        "district_forecast": [],
     }
 
 
@@ -261,6 +324,9 @@ def main() -> int:
     args = parse_args()
     context = load(args.context)
     config = load(args.config)
+    sys.path.insert(0, str(Path("scripts/spatial").resolve()))
+    global geo_admin
+    import geo_admin
 
     product = (context.get("precip_products") or {}).get("p24h_d02_csv") or {}
     url = product.get("download_url")
@@ -278,7 +344,15 @@ def main() -> int:
             points, valid_time = read_grid(cache_path, bbox, init_time)
             network = load(args.network)
             road_rows = road_aggregates(network, points)
-            values = [float(x["next_24h_mm"]) for x in points]
+
+            admin_doc = load(args.admin)
+            districts = geo_admin.prepare_districts(admin_doc)
+            if len(districts) != int((config.get("admin_geometry") or {}).get("district_count", 50)):
+                raise RuntimeError(f"district geometry count mismatch: {len(districts)}")
+            assigned_points = assign_grid_districts(points, districts)
+            bangkok_points = [x for x in assigned_points if x.get("district_id")]
+            district_rows = district_aggregates(bangkok_points)
+            values = [float(x["next_24h_mm"]) for x in bangkok_points]
 
             result = {
                 "schema": "tmd-precip-grid-sample-v0.1",
@@ -300,8 +374,9 @@ def main() -> int:
                     "p90_mm": round(percentile(values, 0.9) or 0.0, 2) if values else None,
                     "max_mm": round(max(values), 2) if values else None,
                 },
-                "grid_points": points,
+                "grid_points": bangkok_points,
                 "road_forecast": road_rows,
+                "district_forecast": district_rows,
             }
         except Exception as exc:
             result = unavailable_result(

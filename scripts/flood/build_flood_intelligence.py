@@ -176,6 +176,56 @@ def ranked_flood_roads(history: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
+def ranked_flood_districts(history: dict[str, Any]) -> list[dict[str, Any]]:
+    flood30 = typed(window(history, "30d"), FLOOD_TYPE)
+    flood7 = typed(window(history, "7d"), FLOOD_TYPE)
+    groups: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "flood_30d": 0,
+            "flood_7d": 0,
+            "days": set(),
+            "district_name_th": None,
+            "district_name_en": None,
+        }
+    )
+    for item in flood30:
+        did = str(item.get("district_id") or "")
+        if not did:
+            continue
+        row = groups[did]
+        row["district_name_th"] = item.get("district_name_th") or did
+        row["district_name_en"] = item.get("district_name_en") or ""
+        row["flood_30d"] += 1
+        started = parse_time(item.get("first_start"))
+        if started:
+            row["days"].add(started.date().isoformat())
+    for item in flood7:
+        did = str(item.get("district_id") or "")
+        if did:
+            groups[did]["flood_7d"] += 1
+
+    result = []
+    for did, row in groups.items():
+        result.append(
+            {
+                "district_id": did,
+                "district_name_th": row["district_name_th"] or did,
+                "district_name_en": row["district_name_en"] or "",
+                "flood_30d": row["flood_30d"],
+                "flood_7d": row["flood_7d"],
+                "distinct_flood_days_30d": len(row["days"]),
+            }
+        )
+    result.sort(
+        key=lambda x: (
+            -x["flood_30d"],
+            -x["distinct_flood_days_30d"],
+            x["district_name_th"],
+        )
+    )
+    return result
+
+
 def build_hotspots(history: dict[str, Any], radius_km: float = 0.30) -> list[dict[str, Any]]:
     flood30 = typed(window(history, "30d"), FLOOD_TYPE)
     flood7_ids = {x["cluster_id"] for x in typed(window(history, "7d"), FLOOD_TYPE)}
@@ -217,6 +267,9 @@ def build_hotspots(history: dict[str, Any], radius_km: float = 0.30) -> list[dic
                 "hotspot_id": hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12],
                 "road_id": items[0]["road_id"],
                 "road_name": items[0].get("road_name"),
+                "district_id": items[0].get("district_id"),
+                "district_name_th": items[0].get("district_name_th"),
+                "district_name_en": items[0].get("district_name_en"),
                 "latitude": round(lat, 6),
                 "longitude": round(lon, 6),
                 "episode_count_30d": len(items),
@@ -371,6 +424,8 @@ def build_road_watch_profiles(
                 "distinct_flood_days_30d": int(obs.get("distinct_flood_days_30d", 0)),
                 "hotspot_count_30d": int(hotspot_counts.get(road_id, 0)),
                 "reported_rain_associations_30d": int(association_counts.get(road_id, 0)),
+                "district_ids": (fc or {}).get("district_ids") or [],
+                "district_names": (fc or {}).get("district_names") or [],
                 "recurrence_percentile": recurrence_pct,
                 "tmd_next24_mean_mm": fc.get("next_24h_mean_mm") if fc else None,
                 "tmd_next24_p90_mm": fc.get("next_24h_p90_mm") if fc else None,
@@ -391,6 +446,74 @@ def build_road_watch_profiles(
     return profiles
 
 
+def build_district_watch_profiles(
+    districts: list[dict[str, Any]],
+    tmd_grid: dict[str, Any],
+) -> list[dict[str, Any]]:
+    observed = {x["district_id"]: x for x in districts}
+    forecast_rows = tmd_grid.get("district_forecast") or []
+    forecast = {x["district_id"]: x for x in forecast_rows}
+    ids = sorted(set(observed) | set(forecast))
+    recurrence_values = [
+        float(observed.get(did, {}).get("flood_30d", 0))
+        for did in ids
+    ]
+    precip_values = [
+        float(forecast[did].get("next_24h_max_mm", 0))
+        for did in ids
+        if did in forecast
+    ]
+    profiles = []
+    for did in ids:
+        obs = observed.get(did, {})
+        fc = forecast.get(did)
+        flood_count = float(obs.get("flood_30d", 0))
+        recurrence_pct = percentile_rank(flood_count, recurrence_values)
+        forecast_pct = (
+            percentile_rank(float(fc.get("next_24h_max_mm", 0)), precip_values)
+            if fc and precip_values
+            else None
+        )
+        index = (
+            round(0.70 * recurrence_pct + 0.30 * forecast_pct, 1)
+            if forecast_pct is not None
+            else None
+        )
+        profiles.append(
+            {
+                "district_id": did,
+                "district_name_th": (
+                    obs.get("district_name_th")
+                    or (fc or {}).get("district_name_th")
+                    or did
+                ),
+                "district_name_en": (
+                    obs.get("district_name_en")
+                    or (fc or {}).get("district_name_en")
+                    or ""
+                ),
+                "flood_30d": int(flood_count),
+                "flood_7d": int(obs.get("flood_7d", 0)),
+                "distinct_flood_days_30d": int(obs.get("distinct_flood_days_30d", 0)),
+                "tmd_next24_mean_mm": fc.get("next_24h_mean_mm") if fc else None,
+                "tmd_next24_p90_mm": fc.get("next_24h_p90_mm") if fc else None,
+                "tmd_next24_max_mm": fc.get("next_24h_max_mm") if fc else None,
+                "recurrence_percentile": recurrence_pct,
+                "forecast_precip_percentile": forecast_pct,
+                "relative_watch_index": index,
+                "relative_watch_class": watch_class(index),
+            }
+        )
+    profiles.sort(
+        key=lambda x: (
+            -(x["relative_watch_index"] if x["relative_watch_index"] is not None else -1),
+            -x["flood_30d"],
+            x["district_name_th"],
+        )
+    )
+    return profiles
+
+
 def main() -> int:
     args = parse_args()
     history = load(args.history)
@@ -403,6 +526,7 @@ def main() -> int:
     pairs = build_associations(history)
     hotspots = build_hotspots(history)
     roads = ranked_flood_roads(history)
+    districts = ranked_flood_districts(history)
 
     daily: dict[str, int] = defaultdict(int)
     for item in flood7:
@@ -415,11 +539,12 @@ def main() -> int:
     tmd_grid = load(args.tmd_grid, {"status": "NOT_FETCHED", "grid_points": [], "road_forecast": []})
     hii_registry = load(args.hii_registry, {"status": "NOT_FETCHED", "stations": []})
     profiles = build_road_watch_profiles(roads, hotspots, pairs, tmd_grid)
+    district_profiles = build_district_watch_profiles(districts, tmd_grid)
 
     result = {
-        "schema": "bkk-mobility-flood-v0.2",
+        "schema": "bkk-mobility-flood-v0.3",
         "anchor_time_ict": history["anchor_time_ict"],
-        "scope": "Expanded V1 road flood intelligence + relative forecast watch",
+        "scope": "Bangkok-wide road/district flood intelligence + relative forecast watch",
         "metrics": {
             "flood_7d": len(flood7),
             "flood_prior_7d": len(prior_flood7),
@@ -432,6 +557,7 @@ def main() -> int:
                 if prior_flood7 else None
             ),
             "roads_with_flood_30d": len({x["road_id"] for x in flood30}),
+            "districts_with_flood_30d": len({x.get("district_id") for x in flood30 if x.get("district_id")}),
             "recurring_hotspots_30d": len(hotspots),
             "peak_flood_day_7d": peak_day[0],
             "peak_flood_day_count": peak_day[1],
@@ -448,9 +574,20 @@ def main() -> int:
             "pairs_30d": pairs,
         },
         "top_flood_roads_30d": roads[:20],
+        "top_flood_districts_30d": districts[:20],
         "hotspots_30d": hotspots[:100],
         "tmd_forecast": tmd_grid,
         "hii_station_registry": hii_registry,
+        "district_watch": {
+            "formula": {
+                "recurrence_component": "70% of percentile rank of 30-day reported flood episode count among Bangkok districts",
+                "forecast_component": "30% of percentile rank of TMD next-24h district maximum precipitation",
+                "index": "0.70 * recurrence_percentile + 0.30 * forecast_precip_percentile",
+            },
+            "interpretation": "relative within Bangkok; not flood probability or hydraulic risk",
+            "profiles": district_profiles,
+            "top_profiles": district_profiles[:15],
+        },
         "road_watch": {
             "formula": {
                 "recurrence_component": "70% of percentile rank of 30-day reported flood episode count among study roads",
@@ -503,6 +640,7 @@ def main() -> int:
                 "tmd_grid_summary": tmd_grid.get("grid_summary"),
                 "hii_status": hii_registry.get("status"),
                 "hii_rain_station_count": hii_registry.get("rain_station_count"),
+                "top_district_watch": district_profiles[:5],
                 "top_road_watch": profiles[:5],
                 "output": str(args.output),
             },
