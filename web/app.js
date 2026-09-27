@@ -8,6 +8,8 @@
     nuan_chan: "#b89cff"
   };
 
+  const OPENFREEMAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+
   const CLASS_LABELS = {
     VERY_HIGH_FOR_TIME: "สูงมากเมื่อเทียบกับช่วงเวลาปกติ",
     HIGH_FOR_TIME: "สูงกว่าปกติของช่วงเวลานี้",
@@ -20,7 +22,8 @@
   let statusData = null;
   let networkData = null;
   let selectedRoad = "all";
-  let mapProjection = null;
+  let map = null;
+  let mapReady = false;
 
   const $ = (id) => document.getElementById(id);
 
@@ -144,139 +147,191 @@
       + escapeHtml(roadLabel(id).replace("ถนน", "")) + "</div>"
     );
     priority.push('<div class="legend-item"><span class="legend-line" style="background:' + cssVar("--subtle") + '"></span>ถนนหลักอื่น</div>');
+    priority.push('<div class="legend-item"><span class="legend-dot"></span>เหตุที่ยืนยันได้</div>');
     $("mapLegend").innerHTML = priority.join("");
   }
 
-  function featureLines(feature) {
-    const geom = feature.geometry || {};
-    if (geom.type === "LineString") return [geom.coordinates || []];
-    if (geom.type === "MultiLineString") return geom.coordinates || [];
-    return [];
-  }
-
-  function computeProjection() {
-    const coords = [];
-    (networkData.features || []).forEach((f) => {
-      featureLines(f).forEach((line) => line.forEach((p) => coords.push(p)));
-    });
-    if (!coords.length) return null;
-    const lons = coords.map((p) => Number(p[0]));
-    const lats = coords.map((p) => Number(p[1]));
-    const minLon = Math.min(...lons), maxLon = Math.max(...lons);
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-    const W = 1000, H = 620, P = 36;
-    return (lon, lat) => {
-      const x = P + ((lon - minLon) / Math.max(maxLon - minLon, 1e-8)) * (W - 2 * P);
-      const y = H - P - ((lat - minLat) / Math.max(maxLat - minLat, 1e-8)) * (H - 2 * P);
-      return [x, y];
+  function incidentGeoJSON() {
+    return {
+      type: "FeatureCollection",
+      features: allIncidents()
+        .filter((incident) => Number.isFinite(Number(incident.longitude)) && Number.isFinite(Number(incident.latitude)))
+        .map((incident) => ({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [Number(incident.longitude), Number(incident.latitude)]
+          },
+          properties: {
+            road_id: incident.road_id,
+            road_name: roadLabel(incident.road_id),
+            title: incident.title || "เหตุการณ์",
+            latest_start: incident.latest_start || "",
+            event_type: incident.event_type || "",
+            record_count: incident.record_count || 1,
+            cluster_scope: incident.cluster_scope || ""
+          }
+        }))
     };
   }
 
-  function svgEl(tag, attrs = {}) {
-    const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
-    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, String(v)));
-    return el;
+  function roadColorExpression() {
+    return [
+      "match", ["get", "road_id"],
+      "ram_inthra", PRIORITY_COLORS.ram_inthra,
+      "prasert_manukitch", PRIORITY_COLORS.prasert_manukitch,
+      "pradit_manutham", PRIORITY_COLORS.pradit_manutham,
+      "nuan_chan", PRIORITY_COLORS.nuan_chan,
+      cssVar("--subtle")
+    ];
   }
 
-  function pathFromCoords(coords) {
-    return coords.map((p, i) => {
-      const [x, y] = mapProjection(Number(p[0]), Number(p[1]));
-      return (i ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1);
-    }).join(" ");
+  function studyBounds() {
+    const b = statusData?.study_area_bbox_wgs84;
+    if (b && Number.isFinite(Number(b.min_lon))) {
+      return [[Number(b.min_lon), Number(b.min_lat)], [Number(b.max_lon), Number(b.max_lat)]];
+    }
+
+    const coords = [];
+    (networkData?.features || []).forEach((feature) => {
+      const geom = feature.geometry || {};
+      const lines = geom.type === "MultiLineString" ? geom.coordinates : [geom.coordinates || []];
+      lines.forEach((line) => line.forEach((p) => coords.push(p)));
+    });
+    if (!coords.length) return [[100.57, 13.755], [100.79, 13.93]];
+    const lons = coords.map((p) => Number(p[0]));
+    const lats = coords.map((p) => Number(p[1]));
+    return [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]];
   }
 
-  function pathFromFeature(feature) {
-    return featureLines(feature)
-      .filter((line) => line.length >= 2)
-      .map((line) => pathFromCoords(line))
-      .join(" ");
+  function fitStudyArea() {
+    if (!map) return;
+    map.fitBounds(studyBounds(), {
+      padding: window.innerWidth < 720 ? 34 : 58,
+      duration: 650,
+      maxZoom: 13.2
+    });
   }
 
-  function renderMap() {
-    const svg = $("networkMap");
-    svg.innerHTML = "";
-    mapProjection = computeProjection();
-    $("mapEmpty").hidden = Boolean(mapProjection);
-    if (!mapProjection) return;
+  function addMapLayers() {
+    if (!map || !networkData || !statusData) return;
 
-    const roadGroup = svgEl("g", { class: "roads-layer" });
-    const pointGroup = svgEl("g", { class: "incidents-layer" });
-    const labelGroup = svgEl("g", { class: "labels-layer" });
-    const priorityBuckets = {};
-
-    (networkData.features || []).forEach((feature) => {
-      const roadId = feature.properties?.road_id;
-      const lines = featureLines(feature);
-      if (!roadId || !lines.length) return;
-      const meta = roadMeta(roadId);
-      const path = svgEl("path", {
-        d: pathFromFeature(feature),
-        class: "network-road" + (meta.priority ? " is-priority" : ""),
-        "data-road": roadId,
-        stroke: roadColor(roadId)
-      });
-      path.addEventListener("click", () => selectRoad(roadId));
-      roadGroup.appendChild(path);
-      if (meta.priority) {
-        priorityBuckets[roadId] ||= [];
-        lines.forEach((line) => priorityBuckets[roadId].push(...line));
+    map.addSource("road-network", { type: "geojson", data: networkData });
+    map.addLayer({
+      id: "road-network",
+      type: "line",
+      source: "road-network",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": roadColorExpression(),
+        "line-width": ["case", ["==", ["get", "priority"], true], 4.6, 2.4],
+        "line-opacity": 0.72
       }
     });
 
-    Object.entries(priorityBuckets).forEach(([roadId, coords]) => {
-      if (!coords.length) return;
-      const avgLon = coords.reduce((s, p) => s + Number(p[0]), 0) / coords.length;
-      const avgLat = coords.reduce((s, p) => s + Number(p[1]), 0) / coords.length;
-      const [x, y] = mapProjection(avgLon, avgLat);
-      const label = svgEl("text", {
-        x: x.toFixed(1),
-        y: y.toFixed(1),
-        class: "road-label",
-        "text-anchor": "middle",
-        "data-road-label": roadId
-      });
-      label.textContent = roadLabel(roadId).replace("ถนน", "");
-      labelGroup.appendChild(label);
+    map.addLayer({
+      id: "road-selected",
+      type: "line",
+      source: "road-network",
+      filter: ["==", ["get", "road_id"], "__none__"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": cssVar("--text"),
+        "line-width": 7.5,
+        "line-opacity": 0.95
+      }
     });
 
-    allIncidents().forEach((incident) => {
-      const lon = Number(incident.longitude);
-      const lat = Number(incident.latitude);
-      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
-      const [x, y] = mapProjection(lon, lat);
-      const g = svgEl("g", {
-        class: "incident-point",
-        "data-road": incident.road_id,
-        transform: "translate(" + x.toFixed(1) + " " + y.toFixed(1) + ")"
-      });
-      g.appendChild(svgEl("circle", { r: 11, class: "incident-halo" }));
-      g.appendChild(svgEl("circle", { r: 5, class: "incident-core" }));
-      g.addEventListener("mouseenter", (ev) => showTooltip(ev, incident));
-      g.addEventListener("mouseleave", hideTooltip);
-      g.addEventListener("click", () => selectRoad(incident.road_id));
-      pointGroup.appendChild(g);
+    map.addSource("confirmed-incidents", { type: "geojson", data: incidentGeoJSON() });
+    map.addLayer({
+      id: "confirmed-incidents",
+      type: "circle",
+      source: "confirmed-incidents",
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 5, 14, 8],
+        "circle-color": cssVar("--danger"),
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 1.8,
+        "circle-opacity": 0.94
+      }
     });
 
-    svg.append(roadGroup, labelGroup, pointGroup);
+    map.on("click", (e) => {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ["confirmed-incidents", "road-network"]
+      });
+      const feature = features[0];
+      if (!feature) return;
+
+      if (feature.layer.id === "confirmed-incidents") {
+        const props = feature.properties || {};
+        const coords = feature.geometry.coordinates.slice();
+        selectedRoad = String(props.road_id || "all");
+        renderFilters();
+        renderIncidents();
+        renderRoadCards();
+        updateMapSelection();
+        new maplibregl.Popup({ closeButton: true, maxWidth: "320px" })
+          .setLngLat(coords)
+          .setHTML(
+            '<div class="map-popup-title">' + escapeHtml(props.title || "เหตุการณ์") + '</div>'
+            + '<div class="map-popup-meta">' + escapeHtml(props.road_name || "") + '</div>'
+            + '<div class="map-popup-meta">' + escapeHtml(formatThaiDate(props.latest_start)) + '</div>'
+          )
+          .addTo(map);
+        return;
+      }
+
+      const roadId = feature.properties?.road_id;
+      if (roadId) selectRoad(String(roadId));
+    });
+
+    map.on("mousemove", (e) => {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ["confirmed-incidents", "road-network"]
+      });
+      map.getCanvas().style.cursor = features.length ? "pointer" : "";
+    });
+
+    mapReady = true;
     updateMapSelection();
+    fitStudyArea();
+    $("mapLoading").hidden = true;
   }
 
-  function showTooltip(event, incident) {
-    const tip = $("mapTooltip");
-    tip.innerHTML = "<strong>" + escapeHtml(incident.title || "เหตุการณ์") + "</strong>"
-      + escapeHtml(roadLabel(incident.road_id)) + "<br>"
-      + escapeHtml(formatThaiDate(incident.latest_start));
-    const rect = $("mapStage").getBoundingClientRect();
-    tip.style.left = Math.min(event.clientX - rect.left + 12, rect.width - 300) + "px";
-    tip.style.top = Math.max(event.clientY - rect.top - 18, 8) + "px";
-    tip.hidden = false;
-  }
+  function initMap() {
+    if (!window.maplibregl) {
+      $("mapLoading").hidden = false;
+      $("mapLoading").textContent = "โหลด MapLibre ไม่สำเร็จ — analytical data ยังอยู่ครบ แต่ basemap ใช้งานไม่ได้";
+      return;
+    }
 
-  function hideTooltip() { $("mapTooltip").hidden = true; }
+    map = new maplibregl.Map({
+      container: "interactiveMap",
+      style: OPENFREEMAP_STYLE,
+      center: [100.68, 13.84],
+      zoom: 10.7,
+      minZoom: 8,
+      maxZoom: 18,
+      attributionControl: true
+    });
+
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+    map.addControl(new maplibregl.FullscreenControl(), "top-right");
+    map.addControl(new maplibregl.ScaleControl({ unit: "metric", maxWidth: 120 }), "bottom-left");
+
+    map.on("load", addMapLayers);
+    map.on("error", (event) => {
+      if (event?.error) console.warn("MapLibre/OpenFreeMap error", event.error);
+    });
+
+    $("fitAreaButton").addEventListener("click", fitStudyArea);
+  }
 
   function filterRoadIds() {
     const ids = [...priorityRoadIds()];
     incidentRoadIds().forEach((id) => { if (!ids.includes(id)) ids.push(id); });
+    if (selectedRoad !== "all" && !ids.includes(selectedRoad)) ids.push(selectedRoad);
     return ids;
   }
 
@@ -322,7 +377,9 @@
   function cardRoadIds() {
     const priority = priorityRoadIds();
     const active = incidentRoadIds().filter((id) => !priority.includes(id));
-    return [...priority, ...active.slice(0, 8)];
+    const ids = [...priority, ...active.slice(0, 8)];
+    if (selectedRoad !== "all" && !ids.includes(selectedRoad)) ids.push(selectedRoad);
+    return ids;
   }
 
   function renderRoadCards() {
@@ -350,14 +407,26 @@
   }
 
   function updateMapSelection() {
-    document.querySelectorAll(".network-road").forEach((el) => {
-      const match = selectedRoad === "all" || el.dataset.road === selectedRoad;
-      el.classList.toggle("is-muted", !match);
-      el.classList.toggle("is-selected", selectedRoad !== "all" && el.dataset.road === selectedRoad);
-    });
-    document.querySelectorAll(".incident-point").forEach((el) => {
-      el.classList.toggle("is-muted", selectedRoad !== "all" && el.dataset.road !== selectedRoad);
-    });
+    if (!map || !mapReady || !map.getLayer("road-network")) return;
+
+    if (selectedRoad === "all") {
+      map.setFilter("road-selected", ["==", ["get", "road_id"], "__none__"]);
+      map.setPaintProperty("road-network", "line-opacity", 0.72);
+      map.setPaintProperty("confirmed-incidents", "circle-opacity", 0.94);
+    } else {
+      map.setFilter("road-selected", ["==", ["get", "road_id"], selectedRoad]);
+      map.setPaintProperty(
+        "road-network",
+        "line-opacity",
+        ["case", ["==", ["get", "road_id"], selectedRoad], 0.45, 0.14]
+      );
+      map.setPaintProperty(
+        "confirmed-incidents",
+        "circle-opacity",
+        ["case", ["==", ["get", "road_id"], selectedRoad], 0.98, 0.16]
+      );
+      map.setPaintProperty("road-selected", "line-color", roadColor(selectedRoad));
+    }
   }
 
   function selectRoad(id) {
@@ -371,10 +440,15 @@
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
     safeStorageSet("bkkmi-theme", theme);
-    if (networkData && statusData) {
-      renderLegend();
-      renderMap();
+    if (statusData) renderLegend();
+    if (map && mapReady && map.getLayer("road-network")) {
+      map.setPaintProperty("road-network", "line-color", roadColorExpression());
+      map.setPaintProperty("confirmed-incidents", "circle-color", cssVar("--danger"));
+      if (selectedRoad !== "all") {
+        map.setPaintProperty("road-selected", "line-color", roadColor(selectedRoad));
+      }
     }
+    if (map) setTimeout(() => map.resize(), 0);
   }
 
   function setupTheme() {
@@ -398,10 +472,10 @@
       networkData = await networkRes.json();
       renderMetrics();
       renderLegend();
-      renderMap();
       renderFilters();
       renderIncidents();
       renderRoadCards();
+      initMap();
     } catch (error) {
       console.error(error);
       const banner = document.createElement("div");

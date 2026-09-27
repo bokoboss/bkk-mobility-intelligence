@@ -44,6 +44,12 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 
+      - name: Frontend map syntax check
+        run: |
+          node --check web/app.js
+          grep -q "maplibre-gl@5" web/index.html
+          grep -q "tiles.openfreemap.org/styles/liberty" web/app.js
+
       - name: Fetch current source bundle
         run: python scripts/live/fetch_current_bundle.py
 

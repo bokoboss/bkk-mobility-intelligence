@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Latest-first mobility intelligence POC for an expanded Northeast Bangkok road network.">
   <title>BKK Mobility Intelligence — Northeast Bangkok</title>
+  <link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -62,12 +63,15 @@
             <div class="map-legend" id="mapLegend"></div>
           </div>
           <div class="map-stage" id="mapStage">
-            <svg id="networkMap" viewBox="0 0 1000 620" role="img" aria-label="เครือข่ายถนนหลักและเหตุการณ์ล่าสุด"></svg>
-            <div class="map-empty" id="mapEmpty" hidden>ไม่พบ geometry สำหรับแสดงผล</div>
-            <div class="map-tooltip" id="mapTooltip" hidden></div>
+            <div id="interactiveMap" role="application" aria-label="แผนที่ออนไลน์ของเครือข่ายถนนหลักและเหตุการณ์ล่าสุด"></div>
+            <div class="map-loading" id="mapLoading">กำลังโหลด OpenFreeMap…</div>
+            <div class="map-toolbar">
+              <button id="fitAreaButton" class="map-tool-button" type="button">Fit Study Area</button>
+              <span class="map-provider">OpenFreeMap · OSM</span>
+            </div>
           </div>
           <div class="map-caption">
-            ถนนหลักถูกค้นจาก OpenStreetMap ตาม highway class และความยาวในพื้นที่; 4 ถนนเดิมยังเป็น priority roads. แผนภาพนี้ไม่ใช่แผนที่นำทางและยังไม่แสดงความเร็วรายช่วงถนน
+            Interactive basemap: OpenFreeMap / OpenStreetMap. เส้นสีคือ analytical road network ของ POC และจุดสีแดงคือเหตุที่ยืนยันได้ สามารถลาก ซูม และคลิกถนนหรือเหตุเพื่อดูรายละเอียด
           </div>
         </article>
 
@@ -107,6 +111,7 @@
       <div>Sources: iTIC Foundation / Longdo Traffic · OpenStreetMap contributors (ODbL)</div>
     </footer>
   </div>
+  <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
