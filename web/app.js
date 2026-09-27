@@ -24,6 +24,23 @@
 
   const $ = (id) => document.getElementById(id);
 
+  function safeStorageGet(key) {
+    try {
+      return window.localStorage ? window.localStorage.getItem(key) : null;
+    } catch (error) {
+      console.warn("localStorage read unavailable", error);
+      return null;
+    }
+  }
+
+  function safeStorageSet(key, value) {
+    try {
+      if (window.localStorage) window.localStorage.setItem(key, value);
+    } catch (error) {
+      console.warn("localStorage write unavailable", error);
+    }
+  }
+
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
@@ -316,7 +333,7 @@
 
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("bkkmi-theme", theme);
+    safeStorageSet("bkkmi-theme", theme);
     if (networkData && statusData) {
       renderLegend();
       renderMap();
@@ -324,7 +341,7 @@
   }
 
   function setupTheme() {
-    const stored = localStorage.getItem("bkkmi-theme");
+    const stored = safeStorageGet("bkkmi-theme");
     const preferred = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     applyTheme(stored || preferred);
     $("themeToggle").addEventListener("click", () => {
@@ -333,8 +350,8 @@
   }
 
   async function load() {
-    setupTheme();
     try {
+      setupTheme();
       const [statusRes, networkRes] = await Promise.all([
         fetch("data/latest_status.json", { cache: "no-store" }),
         fetch("data/core_roads.geojson", { cache: "no-store" })
