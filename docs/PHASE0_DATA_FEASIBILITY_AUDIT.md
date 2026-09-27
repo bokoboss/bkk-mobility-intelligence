@@ -14,23 +14,24 @@ The main Phase 0 constraint is **data volume and source heterogeneity**, not lac
 
 ## Recommended test design
 
-Use two tracks:
+Use two tracks, with **Track A now primary**:
 
-### Track A — reproducible open-data replay
+### Track A — latest/current operations (PRIMARY)
 
-Use a historical period where both incident and probe archives are explicitly covered by the published iTIC archive license.
+- Live incidents: `https://event.longdo.com/feed/json`
+- Free traffic status: iTIC / Longdo `Free-Longdo` mobile-probe feed
+- Current-year / recent archives: use 2026 records where live endpoints are insufficient for recent trend analysis
+- Goal: current road/network status, latest incidents, 24 h / 7 d recent trend, freshness monitoring and current-vs-normal comparison
+- Rule: store retrieval time and source time separately; never label a stale/unknown-age response as live
+
+### Track B — reproducible historical baseline
+
+Use historical data where incident and probe archives are explicitly covered by the published iTIC archive license.
 
 - Pilot network: Ram Inthra Road, Prasert-Manukitch Road, Pradit Manutham Road and Nuan Chan Road
 - Initial analysis window: one selected week, expanded only if coverage is adequate
 - Core sources: iTIC historical incidents + iTIC raw probe
 - Goal: prove study-area extraction, road/segment matching, directional speed profiles, event matching, disruption comparison, and at least one cross-road impact test
-
-### Track B — currentness / live-feed check
-
-- Live incidents: `https://event.longdo.com/feed/json`
-- Free traffic status feed: iTIC / Longdo Free-Longdo feed
-- Goal: test operational freshness and schema stability
-- Constraint: verify the applicable terms for each live endpoint separately; do not automatically extend archive licensing to live feeds
 
 ## Verified source matrix
 
@@ -207,7 +208,7 @@ Optional for first pass. Add water/rain/construction/safety only after the core 
 
 ## Immediate next task
 
-Build the first reproducible ingest/audit path for the live iTIC event JSON, then obtain one historical incident sample and one probe-day sample for the Ram Inthra–Prasert-Manukitch–Pradit Manutham–Nuan Chan pilot network. The web UI remains intentionally deferred.
+Build a **current-source bundle** for the Ram Inthra–Prasert-Manukitch–Pradit Manutham–Nuan Chan pilot network: live incident JSON + Free-Longdo traffic status + retrieval/freshness metadata. Then add the newest practical 2026/recent archive slices needed for 7/30-day context. Historical probe/incidents are deferred to baseline construction after the current pipeline works. The web UI remains intentionally deferred.
 
 ## Official references
 

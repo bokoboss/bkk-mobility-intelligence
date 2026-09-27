@@ -105,28 +105,31 @@ These are **screening distances only**, not final assignment rules:
 
 Dense Bangkok roads make large distance-only buffers unsafe for road attribution.
 
-## Initial temporal strategy
+## Temporal strategy — latest first
 
-Start small:
+Start from **now / recent conditions**, then move backward only as needed:
 
-1. one historical weekday/week with adequate probe coverage;
-2. identify incident dates inside the pilot area;
-3. extend windows around matched incidents;
-4. then expand to month-level or seasonal analysis.
+1. current/latest incident feed and current traffic-status feed;
+2. recent 24 hours for operational context;
+3. recent 7 days for repeatability and weekday context;
+4. recent 30/90 days where data access permits;
+5. older historical data only to construct normal baselines, seasonality and reproducible validation cases.
 
-The first fully reproducible replay should use historical data covered by the published iTIC CC BY 4.0 archive terms. Live-feed tests remain a separate track.
+The first user-facing result should therefore answer **what is happening in this four-road network now/recently**, not begin with a 2022 replay.
 
 ## First Phase 0 outputs
 
 1. OSM-derived study network and extraction envelope;
 2. road-segment inventory;
-3. probe coverage heatmap by road × direction × 15-minute bin;
-4. typical hourly speed profile per road;
-5. incident map and timeline;
-6. before / during / after speed comparison for selected incidents;
-7. one cross-road impact case, if the data contain a defensible example;
-8. data-quality and data-gap report;
-9. go / revise / stop recommendation for P1.
+3. **latest network status with source freshness**;
+4. latest/recent incident map and timeline;
+5. recent traffic-status coverage by road/segment;
+6. 24 h / 7 d trend where source history is available;
+7. current/recent condition vs normal baseline;
+8. before / during / after comparison for selected recent incidents;
+9. one cross-road impact case, if the data contain a defensible example;
+10. data-quality and data-gap report;
+11. go / revise / stop recommendation for P1.
 
 ## POC discipline
 

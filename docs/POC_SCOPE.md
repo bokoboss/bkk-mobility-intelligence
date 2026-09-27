@@ -2,7 +2,7 @@
 
 ## Objective
 
-Validate whether open and publicly accessible Bangkok mobility datasets can be combined into a compact road-network analytical product that explains segment-level traffic performance, disruption patterns, cross-corridor effects, and data gaps.
+Validate whether open and publicly accessible Bangkok mobility datasets can be combined into a **latest-first** compact road-network intelligence product that explains current segment-level traffic conditions, recent disruption patterns, cross-corridor effects, and data gaps, while using historical data mainly as the normal-condition baseline.
 
 ## Phase 0 — Data Feasibility Audit
 
@@ -10,13 +10,14 @@ The first phase will not build the full application. It will establish whether t
 
 ### Core questions
 
-1. Can a compact Bangkok road network be represented consistently across all datasets?
-2. Can incident/event records be matched to the correct road or road segment without relying on a broad buffer alone?
-3. Can traffic performance be measured per road, direction and time period with adequate temporal resolution?
-4. Can disruption periods be compared with normal baseline conditions?
-5. Can an incident on one road be associated with measurable changes on nearby alternative roads?
-6. Are the licensing and attribution requirements compatible with a POC?
-7. What important engineering data remain unavailable and would still require field surveys?
+1. Can we retrieve live/current traffic and incident data with verifiable freshness and stable schemas?
+2. Can a compact Bangkok road network be represented consistently across all datasets?
+3. Can incident/event records be matched to the correct road or road segment without relying on a broad buffer alone?
+4. Can traffic performance be measured per road, direction and time period with adequate temporal resolution?
+5. Can current/recent conditions be compared with a defensible normal baseline?
+6. Can an incident on one road be associated with measurable changes on nearby alternative roads?
+7. Are the licensing and attribution requirements compatible with a POC?
+8. What important engineering data remain unavailable and would still require field surveys?
 
 ## Candidate POC outputs
 
@@ -24,8 +25,10 @@ The first phase will not build the full application. It will establish whether t
 - Road / segment performance profiles
 - Incident timeline
 - Event type distribution
-- Typical daily traffic profile
-- Weekday/weekend comparison
+- Current network status and freshness indicator
+- Recent 24 h / 7 d trend
+- Typical daily traffic baseline
+- Weekday/weekend baseline comparison
 - Recurring vs non-recurring congestion indicators
 - Disruption duration and recovery indicators
 - Data-gap / survey recommendation summary

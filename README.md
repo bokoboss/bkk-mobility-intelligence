@@ -2,8 +2,8 @@
 
 A proof-of-concept project for turning Bangkok mobility and disruption data into decision-useful transportation intelligence.
 
-> **Current stage:** Phase 0 — Data Feasibility Audit  
-> This repository intentionally starts with data validation and analytical feasibility before building the web application.
+> **Current stage:** Phase 0 — Latest-First Data Feasibility Audit  
+> The POC prioritizes live/current conditions and recent trends. Historical data are used primarily to establish normal baselines and context, not as the main product experience.
 
 ## POC question
 
@@ -38,6 +38,18 @@ The official Traffic Data Feeds page describes the Events RSS/JSON feed as the l
 ### Licensing note
 
 The iTIC Open Data Archives explicitly list **Historical Traffic Incidents**, **Historical Traffic Information Status**, and **Historical Raw Vehicle & Mobile Probe Data** under **CC-BY 4.0**. The live event feed is treated separately until its applicable terms are verified; this project does not assume that the archive license automatically applies to every live endpoint.
+
+## Latest-first principle
+
+The product should answer **what is happening now, what changed recently, and how abnormal it is**. Data priority is:
+
+1. live / near-real-time feeds;
+2. current-year (2026) and recent 7/30/90-day records;
+3. older historical archives only for baselines, seasonality and validation.
+
+Every ingested source should preserve `retrieved_at`, source timestamp(s) when available, and an explicit freshness status. The UI must never present stale data as current.
+
+See `docs/LATEST_FIRST_STRATEGY.md`.
 
 ## Phase 0
 
