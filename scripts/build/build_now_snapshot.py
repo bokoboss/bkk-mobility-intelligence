@@ -16,6 +16,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--traffic-index-baseline", type=Path, default=Path("data/processed/current_context/traffic_index_baseline.json"))
     p.add_argument("--cameras", type=Path, default=Path("data/raw/current_context/cameras.study_area.json"))
     p.add_argument("--speed", type=Path, default=Path("data/processed/current_speed/longdo_speed.json"))
+    p.add_argument("--traffic-state", type=Path, default=Path("data/processed/current_speed/traffic_state.json"))
     p.add_argument("--config", type=Path, default=Path("config/study_area.json"))
     p.add_argument("--network", type=Path, default=Path("data/processed/osm/core_roads.geojson"))
     p.add_argument("--output", type=Path, default=Path("data/processed/now/latest_status.json"))
@@ -93,12 +94,23 @@ def main() -> int:
             }
         roads[rid]["confirmed_incidents"].append(cluster)
 
-    speed = load(args.speed) if args.speed.exists() else None
-    for road in roads.values():
+    traffic_state = load(args.traffic_state) if args.traffic_state.exists() else None
+    traffic_roads = (traffic_state or {}).get("roads") or {}
+    traffic_summary = (traffic_state or {}).get("summary") or {}
+    traffic_access = (traffic_state or {}).get("access_state") or "BLOCKED_NO_TRAFFIC_STATE"
+
+    for rid, road in roads.items():
+        state = traffic_roads.get(rid) or {
+            "status": "NO_SAMPLE",
+            "sample_count": 0,
+            "median_speed_kmh": None,
+            "movement_class": "UNKNOWN",
+            "baseline_state": "NOT_BUILT",
+            "abnormality_state": "NOT_EVALUATED",
+        }
         road["confirmed_incident_count"] = len(road["confirmed_incidents"])
-        road["speed_status"] = (
-            "AVAILABLE_EXPERIMENTAL" if speed is not None else "UNAVAILABLE"
-        )
+        road["traffic_state"] = state
+        road["speed_status"] = state.get("status") or "NO_SAMPLE"
         road["data_statement"] = (
             "Confirmed incident activity present"
             if road["confirmed_incident_count"]
@@ -112,6 +124,10 @@ def main() -> int:
     priority_count = sum(1 for road in roads.values() if road.get("priority"))
     active_roads = sum(
         1 for road in roads.values() if road.get("confirmed_incident_count", 0) > 0
+    )
+    sampled_road_count = sum(
+        1 for road in roads.values()
+        if int((road.get("traffic_state") or {}).get("sample_count") or 0) > 0
     )
 
     district_counts: dict[str, dict[str, Any]] = {}
@@ -150,9 +166,7 @@ def main() -> int:
         "source_status": {
             "events": manifest["sources"]["events"]["freshness_class"],
             "anonymous_traffic_free": manifest["sources"]["traffic_free"]["freshness_class"],
-            "segment_speed": (
-                "AVAILABLE_EXPERIMENTAL" if speed is not None else "UNAVAILABLE"
-            ),
+            "segment_speed": traffic_access,
         },
         "source_details": {
             "events": {
@@ -167,6 +181,16 @@ def main() -> int:
                 "retrieved_at_utc": ti["data"].get("retrieved_at_utc"),
                 "age_minutes_at_retrieval": ti["data"].get("age_minutes_at_retrieval"),
             },
+            "segment_speed": {
+                "provider": (traffic_state or {}).get("provider"),
+                "retrieved_at_utc": (traffic_state or {}).get("retrieved_at_utc"),
+                "access_state": traffic_access,
+                "sampled_road_count": traffic_summary.get("sampled_road_count", 0),
+                "road_count": traffic_summary.get("road_count", len(roads)),
+                "sampling_coverage_ratio": traffic_summary.get("sampling_coverage_ratio", 0.0),
+                "usable_observation_count": traffic_summary.get("usable_observation_count", 0),
+                "interpretation": traffic_summary.get("interpretation"),
+            },
         },
         "city_context": {
             "traffic_index": ti["data"],
@@ -177,6 +201,7 @@ def main() -> int:
             "priority_road_count": priority_count,
             "dynamic_road_count": len(roads) - priority_count,
             "roads_with_confirmed_incidents": active_roads,
+            "roads_with_speed_samples": sampled_road_count,
             "strategic_road_count": strategic_count,
             "urban_road_count": urban_count,
             "district_count": int((config.get("admin_geometry") or {}).get("district_count", 50)),
@@ -203,9 +228,13 @@ def main() -> int:
             "incident_now": "READY",
             "city_context_now": "READY",
             "segment_speed_now": (
-                "EXPERIMENTAL" if speed is not None else "BLOCKED_ON_PROVIDER_ACCESS"
+                "EXPERIMENTAL_PARTIAL" if sampled_road_count else "BLOCKED_ON_PROVIDER_ACCESS"
             ),
-            "current_vs_baseline_segment": "BLOCKED_ON_SEGMENT_SPEED",
+            "current_vs_baseline_segment": (
+                "BLOCKED_ON_ROAD_TIME_BASELINE"
+                if sampled_road_count
+                else "BLOCKED_ON_SEGMENT_SPEED"
+            ),
             "now_dashboard": "READY_FOR_BANGKOK_WIDE_INCIDENT_AND_CONTEXT_POC",
         },
     }

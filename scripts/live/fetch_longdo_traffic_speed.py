@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import os
 from pathlib import Path
@@ -70,9 +71,31 @@ def fetch_one(
 
 def main() -> int:
     args = parse_args()
+    retrieved_at = dt.datetime.now(dt.timezone.utc).isoformat()
     key = os.environ.get(args.key_env)
+
     if not key:
-        print(json.dumps({"status": "SKIPPED", "reason": f"missing env {args.key_env}"}))
+        result = {
+            "schema": "bkk-mobility-longdo-speed-v0.2",
+            "provider": "Longdo Map Traffic Speed",
+            "endpoint": ENDPOINT,
+            "retrieved_at_utc": retrieved_at,
+            "status": "BLOCKED_MISSING_API_KEY",
+            "access_dependency": args.key_env,
+            "requested_points": 0,
+            "samples": [],
+            "errors": [],
+        }
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(json.dumps({
+            "status": result["status"],
+            "dependency": args.key_env,
+            "output": str(args.output),
+        }, ensure_ascii=False, indent=2))
         return 0
 
     network = json.loads(args.network.read_text(encoding="utf-8"))
@@ -85,19 +108,37 @@ def main() -> int:
         except Exception as exc:
             errors.append({**point, "error": f"{type(exc).__name__}: {exc}"})
 
+    if rows and errors:
+        status = "OK_PARTIAL"
+    elif rows:
+        status = "OK"
+    else:
+        status = "NO_USABLE_DATA"
+
+    result = {
+        "schema": "bkk-mobility-longdo-speed-v0.2",
+        "provider": "Longdo Map Traffic Speed",
+        "endpoint": ENDPOINT,
+        "retrieved_at_utc": retrieved_at,
+        "status": status,
+        "access_dependency": args.key_env,
+        "requested_points": len(points),
+        "samples": rows,
+        "errors": errors,
+    }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
-        json.dumps({"endpoint": ENDPOINT, "samples": rows, "errors": errors}, ensure_ascii=False, indent=2) + "\n",
+        json.dumps(result, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     print(json.dumps({
-        "status": "OK" if rows else "NO_DATA",
+        "status": status,
         "requested_points": len(points),
         "successful": len(rows),
         "errors": len(errors),
         "output": str(args.output),
     }, ensure_ascii=False, indent=2))
-    return 0 if rows else 2
+    return 0
 
 
 if __name__ == "__main__":

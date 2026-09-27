@@ -889,6 +889,17 @@
       const road = roadMeta(id);
       const incidentsNow = road.confirmed_incident_count || 0;
       const incidents7d = windowRoadCount(id, "7d");
+      const traffic = road.traffic_state || {};
+      const movementLabel = ({
+        STOP_AND_GO: "หยุด-เคลื่อนช้ามาก",
+        SLOW: "ช้า",
+        MOVING: "กำลังเคลื่อนตัว",
+        FREE_FLOW_LIKE: "ค่อนข้างคล่อง"
+      })[traffic.movement_class] || "ไม่ทราบ";
+      const speedNote = Number(traffic.sample_count || 0) > 0
+        && Number.isFinite(Number(traffic.median_speed_kmh))
+        ? "Speed sample " + Number(traffic.median_speed_kmh).toFixed(1) + " km/h · " + movementLabel
+        : "Traffic speed: ยังไม่มีตัวอย่างที่ใช้ได้";
       const selected = selectedRoad === id ? " is-selected" : "";
       return '<article class="road-card' + selected + '" data-road-card="' + id
         + '" style="--road-color:' + roadColor(id) + '">'
@@ -901,7 +912,7 @@
         + "</div>"
         + '<div class="road-card-note">'
         + (incidentsNow ? "พบ incident ที่ยืนยันกับแนวถนนใน feed ปัจจุบัน" : "ยังไม่พบ incident ปัจจุบันที่ยืนยันได้")
-        + "<br>Segment speed ยังไม่พร้อมใช้งาน"
+        + "<br>" + escapeHtml(speedNote)
         + "</div></article>";
     }).join("");
     document.querySelectorAll("[data-road-card]").forEach((card) => {

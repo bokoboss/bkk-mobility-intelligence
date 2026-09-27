@@ -1,97 +1,111 @@
-# Current Data Pipeline — Phase 0
+# Current Data Pipeline — Bangkok-wide Phase 0
 
 ## Purpose
 
-Create a small, auditable **latest-source bundle** for the Ram Inthra / Prasert-Manukitch / Pradit Manutham / Nuan Chan pilot network before building the UI.
+Create an auditable **latest-source bundle** and analytical snapshot for all 50
+Bangkok districts. The original Ram Inthra / Prasert-Manukitch /
+Pradit Manutham / Nuan Chan roads remain focus roads, but they no longer define
+the spatial extent of the pipeline.
 
-The pipeline currently targets two official iTIC/Longdo sources:
+## Current source stack
 
-1. Latest traffic incidents: `https://event.longdo.com/feed/json`
-2. Free traffic status: `https://traffic.longdo.com/api/feed/free`
+1. Latest traffic incidents — `https://event.longdo.com/feed/json`
+2. Free-Longdo traffic status contract — documented by iTIC/Longdo, currently
+   redirecting to `https://live.iticfoundation.org/feed/free`
+3. Longdo Traffic Index — Bangkok-and-vicinity aggregate congestion context
+4. Optional Longdo Map `traffic/speed` adapter — credential-gated road-speed
+   evidence
+5. OpenStreetMap — Bangkok road geometry
+6. TMD / HII context — rain and flood intelligence
 
-The official iTIC feed page describes the latter as **Free-Longdo — mobile probes from Longdo and iTIC applications, offset in meters**. The official link currently redirects to `http://live.iticfoundation.org/feed/free`; the ingestion manifest records both requested and final URL so redirects are visible rather than hidden.
+## Runtime status verified on 2026-09-27
+
+The successful Bangkok-wide GitHub Actions run confirmed:
+
+- iTIC/Longdo event feed: HTTP 200 and live;
+- Free-Longdo traffic status: redirect succeeds but the final endpoint returns
+  **HTTP 401**, so it is not treated as available traffic data;
+- Longdo Traffic Index: live and usable as city-level context;
+- segment/road speed: blocked until an authorized provider credential is
+  available.
+
+A transport failure or authorization failure is never interpreted as zero
+traffic or free flow.
+
+## Current traffic-state contract
+
+The pipeline always creates:
+
+`data/processed/current_speed/traffic_state.json`
+
+The contract records:
+
+- provider/access state;
+- number of roads in the network;
+- number and ratio of roads with usable speed samples;
+- normalized speed observations in km/h;
+- per-road median / p10 / p90 sampled speed;
+- source and direction counts;
+- explicit baseline and abnormality readiness.
+
+If `LONGDO_MAP_API_KEY` is absent, the Longdo adapter still writes a small
+artifact with `BLOCKED_MISSING_API_KEY`, allowing the dashboard pipeline to
+complete without pretending that speed data exist.
+
+The absolute movement bands in this contract are descriptive only. They are
+**not LOS**, and they are **not evidence that a road is abnormal**. Abnormality
+requires a road- and time-specific historical baseline.
 
 ## Run
 
 ```bash
 python scripts/live/fetch_current_bundle.py
-python scripts/live/summarize_latest.py data/raw/current/<RUN_ID>/manifest.json
+python scripts/live/fetch_longdo_traffic_index.py
+python scripts/live/fetch_longdo_traffic_speed.py \
+  --network data/processed/osm/core_roads.geojson \
+  --output data/processed/current_speed/longdo_speed.json
+python scripts/analysis/build_traffic_state.py
+python scripts/build/build_now_snapshot.py
 ```
 
-No third-party Python packages are required for the first live-source audit.
+## Freshness and provenance
 
-## Outputs
+Every live-source artifact preserves retrieval time and source metadata where
+available. Source transport success, observation recency, spatial coverage, and
+authorization state are reported separately.
 
-Each run creates a local directory such as:
+## Spatial processing
 
-```text
-data/raw/current/20260927T061500Z/
-  manifest.json
-  events.raw.json
-  events.study_area.json
-  traffic_free.raw.xml
-  traffic_free.study_area.json
-```
+Events are first filtered by the Bangkok extraction envelope, then clipped to
+the 50 district polygons, assigned to a district, matched to the Bangkok OSM
+road network, and clustered into confirmed incident records.
 
-`data/raw/` is ignored by Git and must not be committed.
+The road network covers named motorway, trunk, primary, secondary and selected
+tertiary roads. The four original focus roads keep stable IDs.
 
-## Freshness
+## Current analytical readiness
 
-Every source manifest records:
+Ready now:
 
-- requested URL;
-- final URL after redirect;
-- HTTP status;
-- response content type;
-- retrieval timestamp (UTC);
-- Date / Last-Modified headers when supplied;
-- payload size;
-- SHA-256;
-- freshness class;
-- schema/audit results.
+- current incidents;
+- 7/30-day incident context;
+- city-level Traffic Index context;
+- Bangkok-wide district and road navigation;
+- rain/flood context;
+- explicit traffic-speed access/coverage reporting.
 
-Important: **a successful request is not sufficient proof that the underlying observations are current**. The pipeline separates transport success from source-data recency.
+Still gated:
 
-For the event feed, the newest event start time is recorded as a diagnostic, but an old newest event is not sufficient by itself to classify the feed as stale because there may simply have been no newer report.
-
-## Study-area filtering
-
-### Incidents
-
-The event JSON includes coordinates. Phase 0 therefore filters incidents by the configured WGS84 extraction envelope and adds road-name text matches when possible.
-
-The bbox is only a **first extraction step**. It is not final road attribution.
-
-### Free traffic status
-
-The current public feed link is documented, but the exact live payload schema must be verified from a successful real fetch. The parser therefore:
-
-- detects JSON / XML / unknown payload;
-- inventories status/speed/link/road/direction-like fields;
-- extracts coordinates if the payload exposes them;
-- detects configured road aliases if they are present;
-- refuses to interpret zero extracted records as zero traffic in the study area.
-
-If the free feed is link-ID based without self-contained geometry, the next step is to build/obtain the corresponding link geometry before segment-level filtering.
-
-## Current limitation
-
-The execution environment used while creating this pipeline could inspect the official web documentation but could not make arbitrary outbound HTTP requests from the code runtime. Therefore the parser is unit-tested against representative JSON/XML payloads, while **real live payload qualification remains the first runtime gate** when this script is run in an internet-enabled environment.
+- broad Bangkok current road-speed coverage;
+- current-vs-normal road abnormality;
+- robust direction-specific travel-time reliability.
 
 ## Tests
 
 ```bash
 python -m unittest discover -s tests -v
+node --check web/app.js
 ```
 
-## Next gate
-
-A real run passes the current-source gate when:
-
-1. latest events are retrieved and parsed;
-2. Free-Longdo feed is retrieved and its real schema is captured;
-3. freshness metadata are present;
-4. study-area incidents can be extracted;
-5. traffic data can either be filtered to the pilot network or the exact missing link-geometry dependency is identified.
-
-Only after this gate should the project add 24 h / 7 d storage and the first “Now” dashboard.
+The GitHub Actions workflow runs these gates before publishing the validated
+static dashboard.
