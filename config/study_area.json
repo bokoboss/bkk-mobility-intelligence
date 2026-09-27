@@ -2,46 +2,89 @@
   "id": "bkk_ne_expanded_v1",
   "name": "Northeast Bangkok Expanded Mobility Pilot",
   "bbox_wgs84": {
-    "min_lon": 100.53,
-    "min_lat": 13.735,
+    "min_lon": 100.57,
+    "min_lat": 13.755,
     "max_lon": 100.79,
     "max_lat": 13.93
   },
   "network": {
-    "include_highway_classes": ["trunk", "primary", "secondary", "tertiary"],
+    "include_highway_classes": [
+      "trunk",
+      "primary",
+      "secondary",
+      "tertiary"
+    ],
     "min_group_length_m": 900,
-    "max_nonpriority_roads": 80
+    "max_nonpriority_roads": 60,
+    "exclude_name_patterns": [
+      "ทางบริการ",
+      "service road",
+      "frontage road"
+    ]
   },
   "roads": [
     {
       "id": "ram_inthra",
       "display_name": "ถนนรามอินทรา",
-      "aliases": ["รามอินทรา", "ram inthra", "ramintra"],
-      "osm_exact_names": ["ถนนรามอินทรา"],
-      "route_refs": ["304"],
+      "aliases": [
+        "รามอินทรา",
+        "ram inthra",
+        "ramintra"
+      ],
+      "osm_exact_names": [
+        "ถนนรามอินทรา"
+      ],
+      "route_refs": [
+        "304"
+      ],
       "priority": true
     },
     {
       "id": "prasert_manukitch",
       "display_name": "ถนนประเสริฐมนูกิจ",
-      "aliases": ["ประเสริฐมนูกิจ", "เกษตร-นวมินทร์", "เกษตร–นวมินทร์", "kaset-navamin", "kaset nawa min", "prasert-manukitch", "prasert manukitch"],
-      "osm_exact_names": ["ถนนประเสริฐมนูกิจ"],
-      "route_refs": ["351"],
+      "aliases": [
+        "ประเสริฐมนูกิจ",
+        "เกษตร-นวมินทร์",
+        "เกษตร–นวมินทร์",
+        "kaset-navamin",
+        "kaset nawa min",
+        "prasert-manukitch",
+        "prasert manukitch"
+      ],
+      "osm_exact_names": [
+        "ถนนประเสริฐมนูกิจ"
+      ],
+      "route_refs": [
+        "351"
+      ],
       "priority": true
     },
     {
       "id": "pradit_manutham",
       "display_name": "ถนนประดิษฐ์มนูธรรม",
-      "aliases": ["ประดิษฐ์มนูธรรม", "เลียบทางด่วน", "pradit manutham", "praditmanutham"],
-      "osm_exact_names": ["ถนนประดิษฐ์มนูธรรม"],
+      "aliases": [
+        "ประดิษฐ์มนูธรรม",
+        "เลียบทางด่วน",
+        "pradit manutham",
+        "praditmanutham"
+      ],
+      "osm_exact_names": [
+        "ถนนประดิษฐ์มนูธรรม"
+      ],
       "route_refs": [],
       "priority": true
     },
     {
       "id": "nuan_chan",
       "display_name": "ถนนนวลจันทร์",
-      "aliases": ["นวลจันทร์", "nuan chan", "nuanchan"],
-      "osm_exact_names": ["ถนนนวลจันทร์"],
+      "aliases": [
+        "นวลจันทร์",
+        "nuan chan",
+        "nuanchan"
+      ],
+      "osm_exact_names": [
+        "ถนนนวลจันทร์"
+      ],
       "route_refs": [],
       "priority": true
     }
@@ -51,6 +94,7 @@
     "Priority roads retain stable IDs and display emphasis.",
     "Additional named trunk/primary/secondary/tertiary roads are discovered dynamically from OpenStreetMap.",
     "Short road-name groups are filtered by total in-area length to reduce local streets and clutter.",
-    "Incident confirmation requires geometry plus road-name or route-ref identity evidence."
+    "Incident confirmation requires geometry plus road-name or route-ref identity evidence.",
+    "Expanded v1 is intentionally tightened to avoid pulling Din Daeng/Phetchaburi/Ngam Wong Wan into the Northeast Bangkok pilot."
   ]
 }

@@ -202,6 +202,15 @@ def line_length_m(coords: list[list[float]]) -> float:
     return sum(haversine_m(a, b) for a, b in zip(coords, coords[1:]))
 
 
+def excluded_name(name: str, config: dict[str, Any]) -> bool:
+    hay = normalized_name(name)
+    patterns = config.get("network", {}).get(
+        "exclude_name_patterns",
+        ["ทางบริการ", "service road", "frontage road"],
+    )
+    return any(normalized_name(str(pattern)) in hay for pattern in patterns)
+
+
 def raw_features(
     payload: dict[str, Any], config: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -222,6 +231,8 @@ def raw_features(
             continue
 
         priority = priority_for_tags(tags, config)
+        if not priority and excluded_name(name, config):
+            continue
         if priority:
             road_id = priority["id"]
             display_name = priority.get("display_name") or name

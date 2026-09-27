@@ -20,6 +20,7 @@ CONFIG = {
         "include_highway_classes": ["primary", "secondary", "tertiary"],
         "min_group_length_m": 500,
         "max_nonpriority_roads": 10,
+        "exclude_name_patterns": ["ทางบริการ", "service road", "frontage road"],
     },
     "roads": [
         {
@@ -49,6 +50,12 @@ class OsmNetworkTests(unittest.TestCase):
         b = osm.dynamic_road_id(" ถนนนวมินทร์ ")
         self.assertEqual(a, b)
         self.assertTrue(a.startswith("osm_"))
+
+
+    def test_service_road_name_is_excluded(self):
+        self.assertTrue(osm.excluded_name("ทางบริการด้านขวา", CONFIG))
+        self.assertTrue(osm.excluded_name("Frontage Road A", CONFIG))
+        self.assertFalse(osm.excluded_name("ถนนนวมินทร์", CONFIG))
 
     def test_selection_keeps_priority_and_long_dynamic(self):
         features = [
