@@ -2,10 +2,30 @@
   "use strict";
 
   const ROAD_META = {
-    ram_inthra: { en: "Ram Inthra Road", th: "ถนนรามอินทรา", colorVar: "--road-ram_inthra" },
-    prasert_manukitch: { en: "Prasert-Manukitch Road", th: "ถนนประเสริฐมนูกิจ", colorVar: "--road-prasert_manukitch" },
-    pradit_manutham: { en: "Pradit Manutham Road", th: "ถนนประดิษฐ์มนูธรรม", colorVar: "--road-pradit_manutham" },
-    nuan_chan: { en: "Nuan Chan Road", th: "ถนนนวลจันทร์", colorVar: "--road-nuan_chan" }
+    ram_inthra: {
+      en: "Ram Inthra Road",
+      th: "ถนนรามอินทรา",
+      colorVar: "--road-ram_inthra",
+      labelOffset: [0, -16]
+    },
+    prasert_manukitch: {
+      en: "Prasert-Manukitch Road",
+      th: "ถนนประเสริฐมนูกิจ",
+      colorVar: "--road-prasert_manukitch",
+      labelOffset: [-58, 22]
+    },
+    pradit_manutham: {
+      en: "Pradit Manutham Road",
+      th: "ถนนประดิษฐ์มนูธรรม",
+      colorVar: "--road-pradit_manutham",
+      labelOffset: [48, 36]
+    },
+    nuan_chan: {
+      en: "Nuan Chan Road",
+      th: "ถนนนวลจันทร์",
+      colorVar: "--road-nuan_chan",
+      labelOffset: [55, -12]
+    }
   };
 
   const CLASS_LABELS = {
@@ -200,9 +220,10 @@
       const avgLon = coords.reduce((s, p) => s + Number(p[0]), 0) / coords.length;
       const avgLat = coords.reduce((s, p) => s + Number(p[1]), 0) / coords.length;
       const [x, y] = mapProjection(avgLon, avgLat);
+      const [dx, dy] = ROAD_META[roadId].labelOffset || [0, 0];
       const label = svgEl("text", {
-        x: x.toFixed(1),
-        y: y.toFixed(1),
+        x: (x + dx).toFixed(1),
+        y: (y + dy).toFixed(1),
         class: "road-label",
         "text-anchor": "middle",
         "data-road-label": roadId

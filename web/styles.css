@@ -184,6 +184,7 @@ main { padding: 26px 0 36px; }
 }
 .map-tooltip strong { display: block; margin-bottom: 3px; font-size: .8rem; }
 .map-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+.map-empty[hidden], .map-tooltip[hidden] { display: none !important; }
 .map-caption { color: var(--subtle); font-size: .7rem; line-height: 1.5; margin-top: 10px; }
 .filter-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .filter-chip {
