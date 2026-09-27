@@ -16,6 +16,7 @@ import datetime as dt
 import hashlib
 import json
 from pathlib import Path
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Any, Iterable
@@ -68,6 +69,28 @@ def fetch(url: str, timeout: float) -> dict[str, Any]:
                 "sha256": sha256(body),
                 "body": body,
             }
+    except urllib.error.HTTPError as exc:
+        ended = utc_now()
+        try:
+            error_body = exc.read()
+        except Exception:
+            error_body = b""
+        return {
+            "ok": False,
+            "requested_url": url,
+            "final_url": exc.geturl(),
+            "http_status": exc.code,
+            "content_type": exc.headers.get("Content-Type") if exc.headers else None,
+            "date_header": exc.headers.get("Date") if exc.headers else None,
+            "last_modified": exc.headers.get("Last-Modified") if exc.headers else None,
+            "retrieved_at_utc": ended.isoformat(),
+            "elapsed_seconds": round((ended - started).total_seconds(), 3),
+            "byte_count": len(error_body),
+            "sha256": sha256(error_body) if error_body else None,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "body": error_body or None,
+        }
     except Exception as exc:
         ended = utc_now()
         return {
@@ -96,13 +119,35 @@ def text_blob(record: Any) -> str:
     return "" if record is None else str(record)
 
 
-def detect_road_matches(record: Any, config: dict[str, Any]) -> list[str]:
-    hay = text_blob(record).casefold()
+def detect_road_matches_in_text(text: str, config: dict[str, Any]) -> list[str]:
+    hay = (text or "").casefold()
     out: list[str] = []
     for road in config.get("roads", []):
         if any(alias.casefold() in hay for alias in road.get("aliases", [])):
             out.append(road["id"])
     return out
+
+
+def event_road_text_evidence(
+    row: dict[str, Any], config: dict[str, Any]
+) -> dict[str, list[str]]:
+    title = " ".join(str(row.get(k) or "") for k in ("title", "title_en"))
+    description = " ".join(
+        str(row.get(k) or "") for k in ("description", "description_en")
+    )
+    return {
+        "title_matches": detect_road_matches_in_text(title, config),
+        "description_matches": detect_road_matches_in_text(description, config),
+    }
+
+
+def detect_road_matches(record: Any, config: dict[str, Any]) -> list[str]:
+    """Generic text match for non-event payloads only.
+
+    Event records use event_road_text_evidence() so provider/agency mentions in
+    descriptions cannot be mistaken for strong road attribution.
+    """
+    return detect_road_matches_in_text(text_blob(record), config)
 
 
 def to_float(value: Any) -> float | None:
@@ -166,7 +211,16 @@ def audit_events(
         if in_bbox(lat, lon, config):
             enriched = dict(row)
             enriched["study_area_match"] = True
-            enriched["road_text_matches"] = detect_road_matches(row, config)
+            evidence = event_road_text_evidence(row, config)
+            enriched["road_title_matches"] = evidence["title_matches"]
+            enriched["road_description_matches"] = evidence["description_matches"]
+            enriched["road_match_confidence"] = (
+                "TITLE_STRONG"
+                if evidence["title_matches"]
+                else "DESCRIPTION_CONTEXT"
+                if evidence["description_matches"]
+                else "UNMATCHED"
+            )
             area_events.append(enriched)
 
     event_age_hours = None

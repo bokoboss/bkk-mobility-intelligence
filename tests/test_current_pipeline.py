@@ -51,7 +51,28 @@ class CurrentPipelineTests(unittest.TestCase):
             "2026-09-27T06:00:00+00:00",
         )
         self.assertEqual(audit["study_area_event_count"], 1)
-        self.assertEqual(rows[0]["road_text_matches"], ["ram_inthra"])
+        self.assertEqual(rows[0]["road_title_matches"], ["ram_inthra"])
+        self.assertEqual(rows[0]["road_match_confidence"], "TITLE_STRONG")
+
+    def test_event_provider_mention_is_context_only(self):
+        feed = [
+            {
+                "eid": "3",
+                "title": "น้ำท่วม ทางหลวง 351",
+                "description": "เจ้าหน้าที่หมวดทางหลวงรามอินทราเข้าอำนวยการจราจร",
+                "latitude": "13.83",
+                "longitude": "100.61",
+                "start": "2026-09-27 11:00:00",
+            }
+        ]
+        _, rows = mod.audit_events(
+            json.dumps(feed, ensure_ascii=False).encode(),
+            CONFIG,
+            "2026-09-27T06:00:00+00:00",
+        )
+        self.assertEqual(rows[0]["road_title_matches"], [])
+        self.assertEqual(rows[0]["road_description_matches"], ["ram_inthra"])
+        self.assertEqual(rows[0]["road_match_confidence"], "DESCRIPTION_CONTEXT")
 
     def test_xml_traffic_coordinate_match(self):
         xml = b"""<feed><item><road>Ramintra</road><lat>13.85</lat><lon>100.64</lon><status>red</status></item><item><road>Elsewhere</road><lat>13.70</lat><lon>100.50</lon></item></feed>"""
