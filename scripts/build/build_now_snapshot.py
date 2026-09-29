@@ -64,7 +64,7 @@ def main() -> int:
     historical_baseline = load(args.historical_baseline) if args.historical_baseline.exists() else None
     historical_summary = (historical_baseline or {}).get("summary") or {}
     if historical_baseline is None:
-        historical_state = "OFFLINE_BUILD_REQUIRED"
+        historical_state = "CLOUD_BATCH_REQUIRED"
     elif int(historical_summary.get("ready_road_count", 0)) > 0:
         historical_state = "READY_PARTIAL"
     else:

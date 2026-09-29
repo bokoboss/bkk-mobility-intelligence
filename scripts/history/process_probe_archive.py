@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Stream iTIC/Longdo historical probe archives into compact daily road profiles.
 
-Designed for offline preprocessing. Large monthly archives stay local and are
-never required by CI. The published raw probe format is:
+Designed for cloud batch preprocessing. Large monthly archives are streamed in
+a manual batch job, are not committed, and are discarded after processing.
+The same CLI remains usable locally for debugging. The published raw probe format is:
 VehicleID,gpsvalid,lat,lon,timestamp,speed,passenger_lamp,engine_acc
 
 The archive format has no heading field, so v0.3 is deliberately

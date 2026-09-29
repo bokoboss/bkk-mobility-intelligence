@@ -1,0 +1,74 @@
+{
+  "schema": "bkkmi-federated-sources-v0.1",
+  "architecture": "DB_FREE_FEDERATED_OPEN_DATA",
+  "principles": [
+    "Provider remains source of truth for public/open upstream data.",
+    "Do not mirror raw datasets unless a temporary batch job requires them.",
+    "Persist only compact derived artifacts that are expensive to recompute.",
+    "Every artifact preserves source, retrieval/build time, and readiness state.",
+    "Transport/auth/source failures never imply zero traffic or no incidents."
+  ],
+  "persistence": {
+    "application_database_required": false,
+    "raw_archive_persistence": "NONE_AFTER_BATCH",
+    "compact_artifact_store": "GITHUB_RELEASE_ASSETS",
+    "release_tag": "historical-baseline-v0.3",
+    "static_runtime_store": "GITHUB_PAGES_BUILD_ARTIFACT"
+  },
+  "sources": {
+    "current_incidents": {
+      "provider": "iTIC / Longdo Traffic",
+      "mode": "LIVE_FETCH",
+      "url": "https://event.longdo.com/feed/json",
+      "persist": "EPHEMERAL_BUILD_CACHE"
+    },
+    "traffic_index": {
+      "provider": "Longdo Traffic",
+      "mode": "LIVE_FETCH",
+      "persist": "EPHEMERAL_BUILD_CACHE"
+    },
+    "current_segment_speed": {
+      "provider": "Longdo Map Traffic Speed",
+      "mode": "LIVE_FETCH_CREDENTIAL_GATED",
+      "persist": "EPHEMERAL_BUILD_CACHE"
+    },
+    "historical_probe": {
+      "provider": "iTIC / Longdo Traffic",
+      "mode": "CLOUD_BATCH_ARCHIVE",
+      "archive_url_template": "https://traffic.longdo.com/data/probe-data/PROBE-{YYYY}{MM}.tar.bz2",
+      "checksum_url_template": "https://traffic.longdo.com/data/probe-data/md5sums-{YYYY}.txt",
+      "persist": "COMPACT_MONTHLY_PROFILE_ONLY"
+    },
+    "road_network": {
+      "provider": "OpenStreetMap contributors",
+      "mode": "PUBLIC_GEOMETRY_FETCH",
+      "persist": "VALIDATED_CACHE_AND_STATIC_RENDER_ARTIFACT"
+    },
+    "weather_forecast": {
+      "provider": "Thai Meteorological Department",
+      "mode": "LIVE_OR_LATEST_FORECAST_FETCH",
+      "persist": "EPHEMERAL_BUILD_CACHE"
+    },
+    "hydro_context": {
+      "provider": "HII / BMA source registry",
+      "mode": "PUBLIC_SOURCE_ADAPTER",
+      "persist": "EPHEMERAL_BUILD_CACHE_OR_COMPACT_DERIVED"
+    }
+  },
+  "derived_artifacts": {
+    "monthly_probe_profile": {
+      "asset_pattern": "probe-profile-{YYYY}{MM}.tar.gz",
+      "store": "GITHUB_RELEASE_ASSETS",
+      "contains_raw_probe_rows": false
+    },
+    "road_time_baseline": {
+      "asset_name": "road_time_baseline_v0_3.json",
+      "store": "GITHUB_RELEASE_ASSETS",
+      "contains_raw_probe_rows": false
+    },
+    "current_dashboard_snapshot": {
+      "store": "GITHUB_PAGES_BUILD_ARTIFACT",
+      "contains_raw_probe_rows": false
+    }
+  }
+}

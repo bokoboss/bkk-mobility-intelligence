@@ -133,41 +133,56 @@ never presented as measured traffic.
 
 ## Historical Traffic Baseline v0.3
 
-Road/time baseline processing is now implemented as an offline-first pipeline.
+Historical processing now follows the DB-free federated architecture.
 
-Source:
+Normal CI does **not** download monthly raw probe archives. Historical data are
+processed only through the manual workflow:
 
-- iTIC / Longdo Historical Raw Vehicle & Mobile Probe Data;
-- 2025 is the initial reference year;
-- published timestamp is GMT+7 and speed is km/h;
-- the published archive format has no heading field, so v0.3 is explicitly
-  direction-neutral.
+`.github/workflows/historical-baseline-batch.yml`
 
-Local preprocessing:
+The workflow accepts year, month, and mode:
 
-```bash
-python scripts/history/process_probe_archive.py \
-  --archive D:/data/PROBE-202501.tar.bz2
-```
+- `trial-first-day` — process only the first daily archive member for QA;
+- `full-month` — process the complete monthly archive.
 
-This streams the archive, filters to Bangkok district polygons, rejects invalid
-GPS/speed rows, map-matches to the OSM network, rejects ambiguous matches, and
-writes compact per-day `.json.gz` road/time profiles.
+For each batch run:
 
-After processing the desired months:
+1. the runner restores or rebuilds the validated Bangkok OSM network;
+2. downloads `PROBE-YYYYMM.tar.bz2` directly from the provider;
+3. verifies the provider MD5 when the checksum is available;
+4. streams the archive without committing or permanently storing raw rows;
+5. filters to Bangkok, map-matches, rejects ambiguous matches and aggregates;
+6. packages only compact daily profiles;
+7. uploads `probe-profile-YYYYMM.tar.gz` to GitHub Release
+   `historical-baseline-v0.3`;
+8. deletes the raw archive at job end.
 
-```bash
-python scripts/history/build_historical_road_baseline.py \
-  --reference-year 2025
-```
+After one or more full-month assets exist, run:
 
-Output:
+`.github/workflows/historical-baseline-assemble.yml`
 
-`data/processed/history/road_time_baseline_v0_3.json`
+It downloads only compact monthly profile assets, builds
+`road_time_baseline_v0_3.json`, publishes that compact baseline to the same
+Release, and can dispatch Current Source Smoke to refresh GitHub Pages.
 
-The baseline uses road × weekday × 30-minute bins. It first takes per-vehicle
-medians within each day/bin, then builds the historical distribution across
-daily medians so vehicles with more frequent reporting do not dominate.
+Current Source Smoke calls `scripts/history/fetch_baseline_release.py`.
+Before the compact Release asset exists this is fail-soft and the dashboard
+shows `CLOUD_BATCH_REQUIRED`. Once the baseline asset exists, the same
+frontend-neutral snapshot contract consumes it automatically.
 
-Normal GitHub Actions does not download the multi-GB monthly archives. CI tests
-parser, map matching and baseline aggregation with synthetic fixtures only.
+The 2025 archive index currently exposes all 12 monthly probe archives. The
+published raw format has no heading field, so v0.3 remains explicitly
+direction-neutral.
+
+## Persistence policy
+
+No application database is required at this stage.
+
+- live public data: fetched from source and normalized;
+- raw historical archive: temporary cloud-batch input only;
+- monthly historical profile: compact GitHub Release asset;
+- road/time baseline: compact GitHub Release asset;
+- current dashboard snapshot: GitHub Pages build artifact.
+
+See `docs/FEDERATED_ARCHITECTURE.md` and
+`config/federated_sources.json`.

@@ -51,6 +51,28 @@ Every ingested source should preserve `retrieved_at`, source timestamp(s) when a
 
 See `docs/LATEST_FIRST_STRATEGY.md`.
 
+## Architecture decision — DB-free federated open data
+
+The current architecture deliberately avoids an application database.
+
+Upstream public/open providers remain the source of truth. The project fetches
+live/latest data on demand or during the dashboard build, normalizes it to stable
+project contracts, and persists only compact derived artifacts that are
+expensive to recompute.
+
+Large historical probe archives are processed in manual GitHub Actions batch
+jobs. Raw archives are discarded after each job; only monthly aggregate
+profiles and the compact road/time baseline are persisted as GitHub Release
+assets.
+
+This keeps the system low-ops and replaceable: the Release-asset store can later
+move to S3/R2 without changing frontend or analytical contracts.
+
+See:
+
+- `docs/FEDERATED_ARCHITECTURE.md`
+- `config/federated_sources.json`
+
 ## Phase 0
 
 Before building the application, the project will audit candidate datasets for:
@@ -76,7 +98,7 @@ See:
 2. **P1 — Analytics Prototype**
 3. **P2 — Mobility Intelligence Explorer**
 4. **P3 — User / stakeholder validation**
-5. **P4 — Production architecture decision**
+5. **P4 — Production hardening; introduce a managed backend/database only when concrete requirements justify persistent operational state**
 
 ## Scope discipline
 

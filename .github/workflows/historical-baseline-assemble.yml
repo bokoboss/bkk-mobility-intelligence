@@ -1,0 +1,99 @@
+name: Historical Baseline Assemble
+
+on:
+  workflow_dispatch:
+    inputs:
+      reference_year:
+        description: "Reference year to assemble"
+        required: true
+        default: "2025"
+        type: string
+      refresh_dashboard:
+        description: "Dispatch Current Source Smoke after publishing the baseline"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  assemble-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RELEASE_TAG: historical-baseline-v0.3
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore validated Bangkok OSM network
+        id: osm_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/processed/osm/core_roads.geojson
+          key: osm-bangkok-citywide-v1-${{ hashFiles('config/study_area.json', 'data/reference/bangkok_districts.geojson') }}
+
+      - name: Fetch Bangkok OSM network on cache miss
+        if: steps.osm_cache.outputs.cache-hit != 'true'
+        run: python scripts/spatial/fetch_bangkok_network.py
+
+      - name: Download full-month compact profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p monthly-assets data/processed/historical_probe/daily
+          gh release download "$RELEASE_TAG" \
+            --pattern "probe-profile-${{ inputs.reference_year }}??.tar.gz" \
+            --dir monthly-assets
+          count=$(find monthly-assets -maxdepth 1 -name 'probe-profile-*.tar.gz' | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "No full-month profile assets found. Trial assets are intentionally excluded."
+            exit 1
+          fi
+          echo "Assembling $count monthly profile assets."
+          for asset in monthly-assets/probe-profile-*.tar.gz; do
+            tar -xzf "$asset" -C data/processed/historical_probe/daily
+          done
+
+      - name: Build compact road/time baseline
+        run: |
+          python scripts/history/build_historical_road_baseline.py \
+            --daily-dir data/processed/historical_probe/daily \
+            --reference-year "${{ inputs.reference_year }}" \
+            --output data/processed/history/road_time_baseline_v0_3.json
+          python -c 'import json; d=json.load(open("data/processed/history/road_time_baseline_v0_3.json")); assert d["schema"]=="bkk-mobility-road-time-baseline-v0.3"'
+
+      - name: Publish baseline Release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" \
+            data/processed/history/road_time_baseline_v0_3.json \
+            --clobber
+
+      - name: Upload short-lived QA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-time-baseline-v0-3-${{ inputs.reference_year }}
+          path: data/processed/history/road_time_baseline_v0_3.json
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Refresh dashboard from compact baseline
+        if: ${{ inputs.refresh_dashboard }}
+        shell: bash
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/actions/workflows/current-source-smoke.yml/dispatches" \
+            -f ref=main \
+            -F "inputs[deploy_pages]=true"

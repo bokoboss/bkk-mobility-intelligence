@@ -1,0 +1,183 @@
+name: Historical Baseline Batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Probe archive year"
+        required: true
+        default: "2025"
+        type: string
+      month:
+        description: "Probe archive month"
+        required: true
+        default: "01"
+        type: choice
+        options:
+          - "01"
+          - "02"
+          - "03"
+          - "04"
+          - "05"
+          - "06"
+          - "07"
+          - "08"
+          - "09"
+          - "10"
+          - "11"
+          - "12"
+      mode:
+        description: "Trial processes only the first daily member; full processes the month"
+        required: true
+        default: "trial-first-day"
+        type: choice
+        options:
+          - "trial-first-day"
+          - "full-month"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: historical-baseline-${{ inputs.year }}-${{ inputs.month }}
+  cancel-in-progress: false
+
+jobs:
+  process-probe-month:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      RELEASE_TAG: historical-baseline-v0.3
+      ARCHIVE_BASE: https://traffic.longdo.com/data/probe-data
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore validated Bangkok OSM network
+        id: osm_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/processed/osm/core_roads.geojson
+          key: osm-bangkok-citywide-v1-${{ hashFiles('config/study_area.json', 'data/reference/bangkok_districts.geojson') }}
+
+      - name: Fetch Bangkok OSM network on cache miss
+        if: steps.osm_cache.outputs.cache-hit != 'true'
+        run: python scripts/spatial/fetch_bangkok_network.py
+
+      - name: Save validated Bangkok OSM network
+        if: steps.osm_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: data/processed/osm/core_roads.geojson
+          key: osm-bangkok-citywide-v1-${{ hashFiles('config/study_area.json', 'data/reference/bangkok_districts.geojson') }}
+
+      - name: Download source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="PROBE-${{ inputs.year }}${{ inputs.month }}.tar.bz2"
+          url="$ARCHIVE_BASE/$archive"
+          echo "Downloading $url"
+          curl -fL --retry 3 --retry-delay 5 "$url" -o "$archive"
+          test -s "$archive"
+          echo "ARCHIVE_NAME=$archive" >> "$GITHUB_ENV"
+
+      - name: Verify published MD5 when available
+        shell: bash
+        run: |
+          set -euo pipefail
+          checksum_url="$ARCHIVE_BASE/md5sums-${{ inputs.year }}.txt"
+          if curl -fsSL --retry 2 "$checksum_url" -o md5sums.txt; then
+            grep -E "[[:space:]]+*?${ARCHIVE_NAME}$" md5sums.txt > selected.md5 || true
+            if test -s selected.md5; then
+              sed -E 's/[[:space:]]+\*/  /' selected.md5 > selected.normalized.md5
+              md5sum -c selected.normalized.md5
+            else
+              echo "No checksum row found for $ARCHIVE_NAME; continuing with transport validation only."
+            fi
+          else
+            echo "Published checksum list unavailable; continuing without checksum validation."
+          fi
+
+      - name: Process Bangkok daily profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          extra=()
+          if [ "${{ inputs.mode }}" = "trial-first-day" ]; then
+            extra+=(--limit-members 1)
+          fi
+          python scripts/history/process_probe_archive.py \
+            --archive "$ARCHIVE_NAME" \
+            --output-dir data/processed/historical_probe/daily \
+            "${extra[@]}"
+
+      - name: Package compact profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          suffix=""
+          if [ "${{ inputs.mode }}" = "trial-first-day" ]; then
+            suffix="-trial"
+          fi
+          asset="probe-profile-${{ inputs.year }}${{ inputs.month }}${suffix}.tar.gz"
+          tar -czf "$asset" -C data/processed/historical_probe/daily .
+          python - <<'PY'
+          import json, os, pathlib
+          daily = sorted(pathlib.Path("data/processed/historical_probe/daily").glob("*.json.gz"))
+          manifest = {
+              "schema": "bkkmi-monthly-probe-profile-manifest-v0.1",
+              "year": "${{ inputs.year }}",
+              "month": "${{ inputs.month }}",
+              "mode": "${{ inputs.mode }}",
+              "source_archive": os.environ["ARCHIVE_NAME"],
+              "source_url": os.environ["ARCHIVE_BASE"] + "/" + os.environ["ARCHIVE_NAME"],
+              "daily_profile_count": len(daily),
+              "contains_raw_probe_rows": False,
+              "workflow_run": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          }
+          pathlib.Path("profile-manifest.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          echo "PROFILE_ASSET=$asset" >> "$GITHUB_ENV"
+
+      - name: Publish compact Release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --title "BKK Mobility compact data artifacts" \
+              --notes "DB-free federated derived artifacts. Raw provider archives are not persisted."
+          fi
+          gh release upload "$RELEASE_TAG" "$PROFILE_ASSET" --clobber
+          manifest_asset="profile-manifest-${{ inputs.year }}${{ inputs.month }}"
+          if [ "${{ inputs.mode }}" = "trial-first-day" ]; then
+            manifest_asset="$manifest_asset-trial"
+          fi
+          manifest_asset="$manifest_asset.json"
+          cp profile-manifest.json "$manifest_asset"
+          gh release upload "$RELEASE_TAG" "$manifest_asset" --clobber
+
+      - name: Upload short-lived QA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-profile-${{ inputs.year }}${{ inputs.month }}-${{ inputs.mode }}
+          path: |
+            profile-manifest.json
+            data/processed/historical_probe/daily/
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Remove raw archive
+        if: always()
+        shell: bash
+        run: rm -f "PROBE-${{ inputs.year }}${{ inputs.month }}.tar.bz2"

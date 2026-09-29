@@ -49,7 +49,10 @@
     "source": "iTIC / Longdo Historical Raw Vehicle & Mobile Probe Data",
     "archive_index_url": "https://traffic.longdo.com/data/probe-data/",
     "format_url": "https://traffic.longdo.com/docs/probedata-format",
-    "processing_mode": "OFFLINE_INCREMENTAL",
+    "processing_mode": "CLOUD_BATCH_RELEASE_ARTIFACT",
+    "release_tag": "historical-baseline-v0.3",
+    "monthly_asset_pattern": "probe-profile-{YYYY}{MM}.tar.gz",
+    "baseline_asset_name": "road_time_baseline_v0_3.json",
     "time_bin_minutes": 30,
     "max_map_match_distance_m": 45,
     "ambiguity_margin_m": 10,
@@ -135,7 +138,7 @@
     "Urban network: named tertiary roads with sufficient in-Bangkok length.",
     "The four original pilot roads retain stable IDs for continuity only; they receive no special Bangkok-wide visual or sampling priority.",
     "Traffic sampling uses a configurable internal request budget and rotating district-aware plan; it is not a provider quota.",
-    "Historical road/time baseline processing is offline-first because monthly raw probe archives are large; CI only validates the processor with synthetic tests.",
+    "Historical road/time baseline processing is cloud-batch-first: raw archives are streamed in manual GitHub Actions jobs and discarded; only compact derived Release assets persist.",
     "Published raw probe format has no heading field, so Historical Baseline v0.3 is direction-neutral.",
     "BMA official district geometry remains the intended authoritative replacement when automated access is stable."
   ]
