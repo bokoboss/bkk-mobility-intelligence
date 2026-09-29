@@ -34,22 +34,31 @@ on:
         options:
           - "trial-first-day"
           - "full-month"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/historical-baseline-batch.yml"
 
 permissions:
   contents: write
 
 concurrency:
-  group: historical-baseline-${{ inputs.year }}-${{ inputs.month }}
+  group: historical-baseline-${{ github.event_name == 'workflow_dispatch' && inputs.year || '2025' }}-${{ github.event_name == 'workflow_dispatch' && inputs.month || '01' }}
   cancel-in-progress: false
 
 jobs:
   process-probe-month:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[baseline-trial-202501]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
       RELEASE_TAG: historical-baseline-v0.3
       ARCHIVE_BASE: https://traffic.longdo.com/data/probe-data
       GH_TOKEN: ${{ github.token }}
+      BATCH_YEAR: ${{ github.event_name == 'workflow_dispatch' && inputs.year || '2025' }}
+      BATCH_MONTH: ${{ github.event_name == 'workflow_dispatch' && inputs.month || '01' }}
+      BATCH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'trial-first-day' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -81,7 +90,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive="PROBE-${{ inputs.year }}${{ inputs.month }}.tar.bz2"
+          archive="PROBE-$BATCH_YEAR$BATCH_MONTH.tar.bz2"
           url="$ARCHIVE_BASE/$archive"
           echo "Downloading $url"
           curl -fL --retry 3 --retry-delay 5 "$url" -o "$archive"
@@ -92,9 +101,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          checksum_url="$ARCHIVE_BASE/md5sums-${{ inputs.year }}.txt"
+          checksum_url="$ARCHIVE_BASE/md5sums-$BATCH_YEAR.txt"
           if curl -fsSL --retry 2 "$checksum_url" -o md5sums.txt; then
-            grep -E "[[:space:]]+*?${ARCHIVE_NAME}$" md5sums.txt > selected.md5 || true
+            grep -E "[[:space:]]+\\*?${ARCHIVE_NAME}$" md5sums.txt > selected.md5 || true
             if test -s selected.md5; then
               sed -E 's/[[:space:]]+\*/  /' selected.md5 > selected.normalized.md5
               md5sum -c selected.normalized.md5
@@ -110,7 +119,7 @@ jobs:
         run: |
           set -euo pipefail
           extra=()
-          if [ "${{ inputs.mode }}" = "trial-first-day" ]; then
+          if [ "$BATCH_MODE" = "trial-first-day" ]; then
             extra+=(--limit-members 1)
           fi
           python scripts/history/process_probe_archive.py \
@@ -123,19 +132,19 @@ jobs:
         run: |
           set -euo pipefail
           suffix=""
-          if [ "${{ inputs.mode }}" = "trial-first-day" ]; then
+          if [ "$BATCH_MODE" = "trial-first-day" ]; then
             suffix="-trial"
           fi
-          asset="probe-profile-${{ inputs.year }}${{ inputs.month }}${suffix}.tar.gz"
+          asset="probe-profile-$BATCH_YEAR$BATCH_MONTH${suffix}.tar.gz"
           tar -czf "$asset" -C data/processed/historical_probe/daily .
           python - <<'PY'
           import json, os, pathlib
           daily = sorted(pathlib.Path("data/processed/historical_probe/daily").glob("*.json.gz"))
           manifest = {
               "schema": "bkkmi-monthly-probe-profile-manifest-v0.1",
-              "year": "${{ inputs.year }}",
-              "month": "${{ inputs.month }}",
-              "mode": "${{ inputs.mode }}",
+              "year": os.environ["BATCH_YEAR"],
+              "month": os.environ["BATCH_MONTH"],
+              "mode": os.environ["BATCH_MODE"],
               "source_archive": os.environ["ARCHIVE_NAME"],
               "source_url": os.environ["ARCHIVE_BASE"] + "/" + os.environ["ARCHIVE_NAME"],
               "daily_profile_count": len(daily),
@@ -159,8 +168,8 @@ jobs:
               --notes "DB-free federated derived artifacts. Raw provider archives are not persisted."
           fi
           gh release upload "$RELEASE_TAG" "$PROFILE_ASSET" --clobber
-          manifest_asset="profile-manifest-${{ inputs.year }}${{ inputs.month }}"
-          if [ "${{ inputs.mode }}" = "trial-first-day" ]; then
+          manifest_asset="profile-manifest-$BATCH_YEAR$BATCH_MONTH"
+          if [ "$BATCH_MODE" = "trial-first-day" ]; then
             manifest_asset="$manifest_asset-trial"
           fi
           manifest_asset="$manifest_asset.json"
@@ -170,7 +179,7 @@ jobs:
       - name: Upload short-lived QA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: historical-profile-${{ inputs.year }}${{ inputs.month }}-${{ inputs.mode }}
+          name: historical-profile-${{ env.BATCH_YEAR }}${{ env.BATCH_MONTH }}-${{ env.BATCH_MODE }}
           path: |
             profile-manifest.json
             data/processed/historical_probe/daily/
@@ -180,4 +189,4 @@ jobs:
       - name: Remove raw archive
         if: always()
         shell: bash
-        run: rm -f "PROBE-${{ inputs.year }}${{ inputs.month }}.tar.bz2"
+        run: rm -f "PROBE-$BATCH_YEAR$BATCH_MONTH.tar.bz2"
